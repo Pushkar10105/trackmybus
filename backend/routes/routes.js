@@ -4,7 +4,7 @@
 
 const express = require("express");
 const pool = require("../db");
-const { computeEtas } = require("../utils/geo");
+const { getLiveBusesForRoute } = require("../utils/liveBuses");
 
 const router = express.Router();
 
@@ -89,57 +89,7 @@ router.get("/:id/live", async (req, res) => {
       return res.status(404).json({ error: "Route not found" });
     }
 
-    // Find all buses on this route that have a recent ping (within 5 min)
-    const busesResult = await pool.query(
-      `SELECT
-         b.id        AS bus_id,
-         b.bus_number,
-         ll.lat,
-         ll.lng,
-         ll.speed,
-         ll.timestamp AS last_ping
-       FROM buses b
-       JOIN LATERAL (
-         SELECT lat, lng, speed, timestamp
-         FROM live_locations
-         WHERE bus_id = b.id
-         ORDER BY timestamp DESC
-         LIMIT 1
-       ) ll ON true
-       WHERE b.route_id = $1
-         AND ll.timestamp >= NOW() - INTERVAL '5 minutes'`,
-      [route_id]
-    );
-
-    if (busesResult.rows.length === 0) {
-      return res.json([]); // no active buses right now
-    }
-
-    // Load this route's stops once (shared for all buses on the route)
-    const stopsResult = await pool.query(
-      `SELECT id, name, lat, lng, sequence_number
-       FROM stops
-       WHERE route_id = $1
-       ORDER BY sequence_number ASC`,
-      [route_id]
-    );
-    const stops = stopsResult.rows;
-
-    // For each active bus compute ETAs using its last known speed
-    const liveBuses = busesResult.rows.map((bus) => {
-      // Use a reasonable fallback speed if the stored speed is too low
-      const avgSpeed = Number(bus.speed) >= 5 ? Number(bus.speed) : 20;
-      const etas = computeEtas(Number(bus.lat), Number(bus.lng), stops, avgSpeed);
-      return {
-        bus_id: bus.bus_id,
-        bus_number: bus.bus_number,
-        lat: Number(bus.lat),
-        lng: Number(bus.lng),
-        speed: Number(bus.speed),
-        etas,
-      };
-    });
-
+    const liveBuses = await getLiveBusesForRoute(route_id);
     return res.json(liveBuses);
   } catch (err) {
     console.error("GET /routes/:id/live error:", err);

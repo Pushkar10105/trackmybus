@@ -91,11 +91,16 @@ router.post("/trip/end", async (req, res) => {
       return res.status(404).json({ error: "No active trip found for this bus" });
     }
 
-    // Mark the bus as inactive
-    await pool.query(
-      `UPDATE buses SET status = 'inactive' WHERE id = $1`,
+    // Mark the bus as inactive and tell commuters immediately
+    const busRow = await pool.query(
+      `UPDATE buses SET status = 'inactive' WHERE id = $1 RETURNING route_id`,
       [bus_id]
     );
+    const io = req.app.get("io");
+    const route_id = busRow.rows[0]?.route_id;
+    if (io && route_id) {
+      io.to(`route:${route_id}`).emit("bus_inactive", { bus_id });
+    }
 
     return res.json({ message: "Trip ended successfully", trip_id: result.rows[0].id });
   } catch (err) {
@@ -133,16 +138,24 @@ router.post("/location", async (req, res) => {
     }
 
     // Validate required fields
-    if (lat === undefined || lng === undefined) {
+    const latNum = Number(lat);
+    const lngNum = Number(lng);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
       return res.status(400).json({ error: "lat and lng are required" });
+    }
+    if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+      return res.status(400).json({ error: "lat and lng must be valid coordinates" });
     }
 
     // 1. Insert the GPS ping into live_locations
     const pingTime = timestamp ? new Date(timestamp) : new Date();
+    if (Number.isNaN(pingTime.getTime())) {
+      return res.status(400).json({ error: "timestamp is invalid" });
+    }
     await pool.query(
       `INSERT INTO live_locations (bus_id, lat, lng, speed, timestamp)
        VALUES ($1, $2, $3, $4, $5)`,
-      [bus_id, lat, lng, speed ?? 0, pingTime]
+      [bus_id, latNum, lngNum, speed ?? 0, pingTime]
     );
 
     // 2. Load bus details (bus_number, route_id) for the emit payload
@@ -186,14 +199,14 @@ router.post("/location", async (req, res) => {
     const stops = stopsResult.rows;
 
     // 5. Compute ETAs to the next stops after the nearest one
-    const etas = computeEtas(Number(lat), Number(lng), stops, avgSpeed);
+    const etas = computeEtas(latNum, lngNum, stops, avgSpeed);
 
     // 6. Build the payload for both the Socket.io broadcast and the HTTP response
     const payload = {
       bus_id: Number(bus_id),
       bus_number,
-      lat: Number(lat),
-      lng: Number(lng),
+      lat: latNum,
+      lng: lngNum,
       speed: Number(speed ?? 0),
       etas,
     };

@@ -119,7 +119,7 @@ router.post("/stops", async (req, res) => {
   try {
     const { route_id, name, lat, lng, sequence_number } = req.body;
 
-    if (!route_id || !name || lat === undefined || lng === undefined || !sequence_number) {
+    if (!route_id || !name || lat === undefined || lng === undefined || sequence_number === undefined) {
       return res
         .status(400)
         .json({ error: "route_id, name, lat, lng, sequence_number are required" });

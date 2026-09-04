@@ -33,8 +33,8 @@ router.post("/", async (req, res) => {
 
     // Resolve the bus_number string to an actual bus id
     const busResult = await pool.query(
-      `SELECT id FROM buses WHERE bus_number = $1`,
-      [bus_number]
+      `SELECT id FROM buses WHERE LOWER(bus_number) = LOWER($1)`,
+      [String(bus_number).trim()]
     );
 
     if (busResult.rows.length === 0) {

@@ -4,7 +4,8 @@
 // and starts the periodic "stale bus" checker that marks buses inactive when
 // they stop sending GPS pings.
 
-require("dotenv").config(); // Load .env variables before anything else
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") }); // Load backend/.env even if cwd is the repo root
 
 const express = require("express");
 const http = require("http");
@@ -98,6 +99,7 @@ app.use("/api/routes",    require("./routes/routes"));
 app.use("/api/issues",    require("./routes/issues"));
 app.use("/api/lostfound", require("./routes/lostfound"));
 app.use("/api/admin",     require("./routes/admin"));
+app.use("/api/chat",      require("./routes/chat"));
 
 // ---------------------------------------------------------------------------
 // Health check endpoint
@@ -121,14 +123,14 @@ setInterval(async () => {
     const stale = await pool.query(
       `SELECT b.id AS bus_id, b.route_id
        FROM buses b
-       JOIN LATERAL (
+       LEFT JOIN LATERAL (
          SELECT timestamp FROM live_locations
          WHERE bus_id = b.id
          ORDER BY timestamp DESC
          LIMIT 1
        ) ll ON true
        WHERE b.status = 'active'
-         AND ll.timestamp < NOW() - INTERVAL '5 minutes'`
+         AND (ll.timestamp IS NULL OR ll.timestamp < NOW() - INTERVAL '5 minutes')`
     );
 
     if (stale.rows.length === 0) return;
@@ -170,7 +172,9 @@ async function ensureDatabaseInitialized() {
     `);
 
     const tablesExist = checkRes.rows[0]?.exists;
-    if (!tablesExist || process.env.AUTO_MIGRATE === "true") {
+    // Only auto-migrate an empty database. AUTO_MIGRATE=true used to re-run
+    // schema.sql (which DROPs all tables) on every boot — that wipes live data.
+    if (!tablesExist) {
       console.log("⚡ Empty or uninitialized database detected. Auto-migrating schema & seed data...");
       const { runMigration } = require("./scripts/migrate");
       await runMigration();
@@ -188,6 +192,10 @@ async function ensureDatabaseInitialized() {
 // ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
+
+if (!process.env.JWT_SECRET) {
+  console.warn("⚠️  JWT_SECRET is not set. Login and protected routes will fail.");
+}
 
 server.listen(PORT, HOST, async () => {
   console.log(`🚌 TrackMyBus API server running on http://${HOST}:${PORT}`);

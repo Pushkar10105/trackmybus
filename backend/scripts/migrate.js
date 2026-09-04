@@ -7,17 +7,18 @@
 //   or
 //   npm run migrate (inside backend or root)
 
-require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
+
+// Load backend/.env regardless of the current working directory
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 async function runMigration() {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
-    console.error("❌ Error: DATABASE_URL is not set in environment or .env file.");
-    process.exit(1);
+    throw new Error("DATABASE_URL is not set in environment or .env file.");
   }
 
   // Determine SSL configuration
@@ -78,7 +79,7 @@ async function runMigration() {
     console.log(`   - Buses seeded:   ${busCount.rows[0].count}`);
   } catch (err) {
     console.error("❌ Migration failed:", err.message);
-    process.exit(1);
+    throw err; // let the CLI wrapper exit; do not kill the API server when imported
   } finally {
     await client.end();
   }
@@ -86,7 +87,10 @@ async function runMigration() {
 
 // Allow importing as a helper or running directly
 if (require.main === module) {
-  runMigration();
+  runMigration().catch((err) => {
+    console.error("❌ Error:", err.message);
+    process.exit(1);
+  });
 }
 
 module.exports = { runMigration };

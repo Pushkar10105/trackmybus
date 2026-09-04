@@ -35,6 +35,10 @@ function requireAuth(role = null) {
         return res.status(401).json({ error: "No token provided" });
       }
 
+      if (!process.env.JWT_SECRET) {
+        return res.status(500).json({ error: "Server is missing JWT_SECRET" });
+      }
+
       // 2. Verify the token; throws if invalid or expired
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 

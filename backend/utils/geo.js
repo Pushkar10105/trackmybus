@@ -44,8 +44,9 @@ function haversineKm(lat1, lng1, lat2, lng2) {
  * that come AFTER the nearest one.
  *
  * How ETAs are computed:
- *   - We calculate cumulative straight-line distance from the bus
- *     to stop[n], to stop[n+1], to stop[n+2] (chaining each leg).
+ *   - Start with the distance from the bus to the nearest stop.
+ *   - Then walk along the remaining stops, adding each leg
+ *     (nearest → next, next → next+1, …).
  *   - ETA (minutes) = cumulative distance (km) / speed (km/h) * 60.
  *   - Result is rounded to the nearest whole minute.
  *
@@ -58,6 +59,12 @@ function haversineKm(lat1, lng1, lat2, lng2) {
  */
 function computeEtas(busLat, busLng, stops, avgSpeedKmh) {
   if (!stops || stops.length === 0) return [];
+
+  // Guard against 0 / NaN so we never divide by zero
+  let speed = Number(avgSpeedKmh);
+  if (!Number.isFinite(speed) || speed <= 0) {
+    speed = 20;
+  }
 
   // --- Step 1: find the nearest stop ---
   let nearestIdx = 0;
@@ -73,21 +80,22 @@ function computeEtas(busLat, busLng, stops, avgSpeedKmh) {
 
   // --- Step 2: take up to 3 stops AFTER the nearest one ---
   const nextStops = stops.slice(nearestIdx + 1, nearestIdx + 4);
+  const nearest = stops[nearestIdx];
 
-  // --- Step 3: compute cumulative distance chain and convert to ETA ---
+  // --- Step 3: chain distance from the nearest stop along the route ---
+  // Start at the nearest stop (not the bus) so we do not double-count
+  // the bus→nearest leg when measuring bus→upcoming stop.
   const etas = [];
-  let prevLat = busLat;
-  let prevLng = busLng;
-  let cumulativeKm = nearestDist; // distance from bus to nearest stop
+  let prevLat = Number(nearest.lat);
+  let prevLng = Number(nearest.lng);
+  let cumulativeKm = nearestDist;
 
-  // Include the nearest stop itself as the first "leg" origin,
-  // then chain each subsequent stop
   for (let i = 0; i < nextStops.length; i++) {
     const stop = nextStops[i];
     const legKm = haversineKm(prevLat, prevLng, Number(stop.lat), Number(stop.lng));
     cumulativeKm += legKm;
 
-    const etaMin = Math.round((cumulativeKm / avgSpeedKmh) * 60);
+    const etaMin = Math.max(0, Math.round((cumulativeKm / speed) * 60));
 
     etas.push({
       stop_id: stop.id,

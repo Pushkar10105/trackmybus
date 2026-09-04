@@ -3,8 +3,11 @@
 // Using a pool instead of individual connections lets us reuse
 // already-open TCP sockets, which is much faster under load.
 
+const path = require("path");
 const { Pool } = require("pg");
-require("dotenv").config();
+
+// Always load backend/.env even if the process was started from the repo root
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 // 'Pool' manages multiple database connections automatically.
 // We read the connection string from the environment so credentials
@@ -39,6 +42,11 @@ pool.connect((err, client, release) => {
     console.log("✅ Database pool connected successfully");
     release(); // return the test connection back to the pool
   }
+});
+
+// Idle clients can error if the database restarts; log instead of crashing
+pool.on("error", (err) => {
+  console.error("❌ Unexpected database pool error:", err.message);
 });
 
 module.exports = pool;

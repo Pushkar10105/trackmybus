@@ -25,7 +25,8 @@ const router = express.Router();
  */
 router.post("/login", async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const phone = String(req.body.phone ?? "").trim();
+    const password = req.body.password;
 
     // Basic input validation
     if (!phone || !password) {
@@ -45,6 +46,11 @@ router.post("/login", async (req, res) => {
 
     const user = userResult.rows[0];
 
+    // Login is for drivers and admins only (commuters use the public pages)
+    if (user.role !== "driver" && user.role !== "admin") {
+      return res.status(403).json({ error: "Only drivers and admins can log in" });
+    }
+
     // 2. Compare the submitted password with the stored hash
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
@@ -61,6 +67,10 @@ router.post("/login", async (req, res) => {
       if (busResult.rows.length > 0) {
         bus_id = busResult.rows[0].id;
       }
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Server is missing JWT_SECRET" });
     }
 
     // 4. Sign and return a JWT that expires in 12 hours
