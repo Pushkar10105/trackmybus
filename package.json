@@ -1,12 +1,15 @@
-﻿{
+{
   "name": "trackmybus",
   "version": "1.0.0",
   "description": "Real-time bus tracking application",
   "private": true,
   "scripts": {
     "postinstall": "cd backend && npm install",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
     "start": "cd backend && npm start",
-    "dev": "cd backend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
     "migrate": "cd backend && npm run migrate"
   },
   "engines": {

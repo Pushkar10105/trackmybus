@@ -197,6 +197,19 @@ if (!process.env.JWT_SECRET) {
   console.warn("⚠️  JWT_SECRET is not set. Login and protected routes will fail.");
 }
 
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`❌ Port ${PORT} is already in use by another process.`);
+    console.error(`   To resolve this on Windows:`);
+    console.error(`   1. Find the PID: netstat -ano | findstr :${PORT}`);
+    console.error(`   2. Kill the process: taskkill /F /PID <PID>`);
+    console.error(`   Or set a different PORT in backend/.env (e.g. PORT=3001).`);
+  } else {
+    console.error("Server error:", err);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, HOST, async () => {
   console.log(`🚌 TrackMyBus API server running on http://${HOST}:${PORT}`);
   console.log(`   Health: http://${HOST}:${PORT}/api/health`);
