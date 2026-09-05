@@ -82,7 +82,9 @@ export const adminApi = {
   deleteStop: (id) => api.delete(`/api/admin/stops/${id}`),
 
   // Buses CRUD
-  createBus: ({ route_id, bus_number, driver_phone }) =>
+    getAllBuses: () => api.get('/api/admin/buses'),
+    getAllDrivers: () => api.get('/api/admin/drivers'),
+createBus: ({ route_id, bus_number, driver_phone }) =>
     api.post('/api/admin/buses', {
       route_id: route_id ? Number(route_id) : null,
       bus_number,

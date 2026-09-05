@@ -53,7 +53,6 @@ router.patch("/routes/:id", async (req, res) => {
     const { id } = req.params;
     const { name, start_point, end_point, city_code } = req.body;
 
-    // Build a dynamic SET clause with only the supplied fields
     const fields = [];
     const values = [];
     let idx = 1;
@@ -206,6 +205,49 @@ router.delete("/stops/:id", async (req, res) => {
 // =============================================================================
 // BUSES CRUD  – /api/admin/buses
 // =============================================================================
+
+/**
+ * GET /api/admin/drivers
+ * List all users with role='driver', for populating assignment dropdowns.
+ * Response: [{ id, name, phone }]
+ */
+router.get("/drivers", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, phone FROM users WHERE role = 'driver' ORDER BY name`
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /admin/drivers error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/admin/buses
+ * List every bus in the fleet, with its assigned route name and driver
+ * name/phone joined in (both may be null if unassigned).
+ * Response: [{ id, bus_number, status, route_id, route_name,
+ *              driver_id, driver_name, driver_phone }]
+ */
+router.get("/buses", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         b.id, b.bus_number, b.status,
+         b.route_id, r.name AS route_name,
+         b.driver_id, u.name AS driver_name, u.phone AS driver_phone
+       FROM buses b
+       LEFT JOIN routes r ON r.id = b.route_id
+       LEFT JOIN users u ON u.id = b.driver_id
+       ORDER BY b.id`
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /admin/buses error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 /**
  * POST /api/admin/buses
