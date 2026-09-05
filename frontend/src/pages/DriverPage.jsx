@@ -2,16 +2,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { driverApi } from '../api/endpoints';
-import { Navigation, Play, Square, AlertCircle, CheckCircle, Radio, Lock, Phone } from 'lucide-react';
+import { Navigation, Play, Square, AlertCircle, CheckCircle, Radio, Lock, Phone, User } from 'lucide-react';
 
 export default function DriverPage() {
-  const { user, isAuthenticated, role, login, logout } = useAuth();
+  const { user, isAuthenticated, role, login, signup, logout } = useAuth();
+
+  // Toggle between 'login' and 'signup' views
+  const [authMode, setAuthMode] = useState('login');
 
   // Login form state
   const [phone, setPhone] = useState('9000000002'); // prefilled seeded driver
   const [password, setPassword] = useState('password123'); // prefilled seeded password
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+
+  // Signup form state
+  const [signupName, setSignupName] = useState('');
+  const [signupPhone, setSignupPhone] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
+  const [signupError, setSignupError] = useState('');
+  const [signupLoading, setSignupLoading] = useState(false);
 
   // Trip and Tracking State
   const [tripActive, setTripActive] = useState(false);
@@ -54,6 +65,28 @@ export default function DriverPage() {
     setLoginLoading(false);
   };
 
+  // Handle Driver Signup
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setSignupError('');
+
+    if (signupPassword !== signupConfirmPassword) {
+      setSignupError('Passwords do not match');
+      return;
+    }
+    if (signupPassword.length < 6) {
+      setSignupError('Password must be at least 6 characters');
+      return;
+    }
+
+    setSignupLoading(true);
+    const res = await signup(signupName.trim(), signupPhone.trim(), signupPassword);
+    if (!res.success) {
+      setSignupError(res.error || 'Failed to create driver account');
+    }
+    setSignupLoading(false);
+  };
+
   // Start Trip
   const handleStartTrip = async () => {
     try {
@@ -64,7 +97,6 @@ export default function DriverPage() {
       setStatusText('GPS Broadcasting Active');
 
       if (simulateMode) {
-        // Start simulation timer (every 5 seconds)
         intervalRef.current = setInterval(async () => {
           const step = simulationStepRef.current % SIMULATED_COORDS.length;
           const currentPoint = SIMULATED_COORDS[step];
@@ -89,7 +121,6 @@ export default function DriverPage() {
           }
         }, 5000);
       } else {
-        // Real browser geolocation
         if (!navigator.geolocation) {
           setStatus('no-gps');
           setStatusText('Geolocation not supported on this browser');
@@ -103,7 +134,7 @@ export default function DriverPage() {
                 bus_id: user?.bus_id || 1,
                 lat: position.coords.latitude,
                 lng: position.coords.longitude,
-                speed: (position.coords.speed || 0) * 3.6, // convert m/s to km/h
+                speed: (position.coords.speed || 0) * 3.6,
                 timestamp: new Date(position.timestamp).toISOString(),
               });
               setStatus('sending');
@@ -156,7 +187,6 @@ export default function DriverPage() {
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
@@ -164,7 +194,7 @@ export default function DriverPage() {
     };
   }, []);
 
-  // 1. If not authenticated or not a driver, show high-contrast Login Screen
+  // 1. If not authenticated or not a driver, show high-contrast Login/Signup Screen
   if (!isAuthenticated || role !== 'driver') {
     return (
       <div className="min-h-[calc(100vh-64px)] flex items-center justify-center p-4 bg-slate-900">
@@ -174,60 +204,177 @@ export default function DriverPage() {
               <Navigation className="w-8 h-8" />
             </div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Driver Console</h2>
-            <p className="text-xs text-slate-500 font-medium">Log in to operate assigned transit vehicle</p>
+            <p className="text-xs text-slate-500 font-medium">
+              {authMode === 'login'
+                ? 'Log in to operate assigned transit vehicle'
+                : 'Create a driver account to get started'}
+            </p>
           </div>
 
-          {loginError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{loginError}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-slate-400" />
-                Phone Number
-              </label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. 9000000002"
-                className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                required
-              />
-            </div>
-
+          {/* Mode Toggle */}
+          <div className="flex bg-slate-100 rounded-xl p-1 text-xs font-bold">
             <button
-              type="submit"
-              disabled={loginLoading}
-              className="w-full py-4 rounded-xl font-black text-base uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg transition active:scale-98 disabled:opacity-50"
+              onClick={() => {
+                setAuthMode('login');
+                setSignupError('');
+              }}
+              className={`flex-1 py-2 rounded-lg transition ${
+                authMode === 'login' ? 'bg-white shadow text-slate-900' : 'text-slate-500'
+              }`}
             >
-              {loginLoading ? 'Signing in...' : 'Sign In as Driver'}
+              Sign In
             </button>
-          </form>
-
-          <div className="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-500 text-center">
-            Demo driver seeded in database: <br />
-            <strong className="text-slate-800">9000000002</strong> / <strong className="text-slate-800">password123</strong>
+            <button
+              onClick={() => {
+                setAuthMode('signup');
+                setLoginError('');
+              }}
+              className={`flex-1 py-2 rounded-lg transition ${
+                authMode === 'signup' ? 'bg-white shadow text-slate-900' : 'text-slate-500'
+              }`}
+            >
+              Create Account
+            </button>
           </div>
+
+          {authMode === 'login' ? (
+            <>
+              {loginError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{loginError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-slate-400" />
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="e.g. 9000000002"
+                    className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="w-full py-4 rounded-xl font-black text-base uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg transition active:scale-98 disabled:opacity-50"
+                >
+                  {loginLoading ? 'Signing in...' : 'Sign In as Driver'}
+                </button>
+              </form>
+
+              <div className="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-500 text-center">
+                Demo driver seeded in database: <br />
+                <strong className="text-slate-800">9000000002</strong> / <strong className="text-slate-800">password123</strong>
+              </div>
+            </>
+          ) : (
+            <>
+              {signupError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{signupError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSignup} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-slate-400" />
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={signupName}
+                    onChange={(e) => setSignupName(e.target.value)}
+                    placeholder="e.g. Priya Sharma"
+                    className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-slate-400" />
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={signupPhone}
+                    onChange={(e) => setSignupPhone(e.target.value)}
+                    placeholder="e.g. 9123456789"
+                    className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                    className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    value={signupConfirmPassword}
+                    onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                    placeholder="Re-enter password"
+                    className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={signupLoading}
+                  className="w-full py-4 rounded-xl font-black text-base uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg transition active:scale-98 disabled:opacity-50"
+                >
+                  {signupLoading ? 'Creating account...' : 'Create Driver Account'}
+                </button>
+              </form>
+
+              <div className="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-500 text-center">
+                After signing up, contact your admin to get assigned to a bus and route.
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -236,13 +383,12 @@ export default function DriverPage() {
   // 2. Authenticated Driver Screen: High contrast, big tap targets
   return (
     <div className="min-h-[calc(100vh-64px)] bg-slate-950 text-white flex flex-col justify-between p-4 sm:p-8 select-none">
-      {/* Top Bar: Bus Number & Status Pill */}
       <div className="space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div>
             <span className="text-xs uppercase tracking-widest text-slate-400 font-bold">Assigned Vehicle</span>
             <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-emerald-400">
-              {user?.bus_id ? `Bus ID #${user.bus_id}` : 'TS09-1234'}
+              {user?.bus_id ? `Bus ID #${user.bus_id}` : 'No bus assigned yet'}
             </h1>
           </div>
 
@@ -254,7 +400,6 @@ export default function DriverPage() {
           </button>
         </div>
 
-        {/* Status Pill */}
         <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <div className="flex items-center gap-3">
             <span
@@ -285,7 +430,6 @@ export default function DriverPage() {
           />
         </div>
 
-        {/* Simulation Mode Switch (Handy for demo / testing) */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs">
           <div>
             <span className="font-bold text-slate-300">Desktop Simulation Mode</span>
@@ -305,7 +449,6 @@ export default function DriverPage() {
         </div>
       </div>
 
-      {/* Center: Massive Tap Button */}
       <div className="py-8 flex flex-col items-center justify-center">
         {!tripActive ? (
           <button
@@ -326,7 +469,6 @@ export default function DriverPage() {
         )}
       </div>
 
-      {/* Bottom Footer Note */}
       <div className="text-center text-xs text-slate-500 py-2 border-t border-slate-900">
         Leave this screen open while operating. Location pings broadcast to all commuters watching your route.
       </div>
