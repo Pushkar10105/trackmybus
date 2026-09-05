@@ -131,7 +131,7 @@ async function askGemini(message, lang) {
   const { GoogleGenerativeAI } = require("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     systemInstruction:
       "You are the TrackMyBus assistant. Always reply in the same language the user wrote in " +
       `(the lang hint is "${lang || "en"}"). Keep answers to 1 or 2 short sentences. ` +
