@@ -1,27 +1,26 @@
 // src/App.jsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import CommuterPage from './pages/CommuterPage';
 import DriverPage from './pages/DriverPage';
 import AdminPage from './pages/AdminPage';
-import { useEffect } from 'react';
 import { api } from './api/client';
-
 
 export default function App() {
   useEffect(() => {
     api.get('/api/health')
-      .then(res => console.log('✅ Connected:', res))
-      .catch(err => console.error('❌ Failed:', err));
+      .then(res => console.log('✅ Connected to Hyderabad RTC Fleet Service:', res))
+      .catch(err => console.warn('Transit API Health Check:', err?.message || err));
   }, []);
+
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+        <div className="min-h-screen bg-surface text-ink flex flex-col font-sans selection:bg-black selection:text-white">
           <Navbar />
-          <main className="flex-1">
+          <main className="flex-1 flex flex-col relative overflow-hidden">
             <Routes>
               <Route path="/" element={<CommuterPage />} />
               <Route path="/commuter" element={<CommuterPage />} />

@@ -6,39 +6,103 @@
 .leaflet-container {
   width: 100%;
   height: 100%;
-  border-radius: 0.75rem;
+  background: #f4f4f4;
+  font-family: inherit;
   z-index: 10;
 }
 
-/* Custom pulse animations for live buses */
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
-  }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-  }
+/* Grayscale high-contrast map styling matching Kinetic Monochrome */
+.leaflet-tile {
+  filter: grayscale(100%) contrast(106%) brightness(101%);
 }
 
-.live-bus-marker {
-  animation: pulse-ring 2s infinite;
+/* Bus pulse ring animation */
+.bus-pulse-ring {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.14);
+  animation: pulseAnim 2.2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  pointer-events: none;
+  top: -10px;
+  left: -6px;
+}
+
+@keyframes pulseAnim {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(1.65); opacity: 0; }
+}
+
+/* Mic recording wave animation */
+@keyframes pulseMic {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.28); opacity: 0.35; }
+}
+
+.mic-recording-wave {
+  animation: pulseMic 1.2s infinite ease-in-out;
+}
+
+/* AI typing dots animation */
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-5px); }
+}
+
+.dot-1 { animation: typingBounce 1.4s infinite 0.1s; }
+.dot-2 { animation: typingBounce 1.4s infinite 0.25s; }
+.dot-3 { animation: typingBounce 1.4s infinite 0.4s; }
+
+/* Tactile Icon & Pill Click Feedback Utilities */
+.icon-btn {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s ease;
+  user-select: none;
+}
+.icon-btn:hover {
+  transform: scale(1.06);
+}
+.icon-btn:active {
+  transform: scale(0.90);
+}
+
+.pill-btn {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+.pill-btn:hover {
+  transform: translateY(-1px);
+}
+.pill-btn:active {
+  transform: scale(0.96) translateY(0);
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4d4d4;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 
 /* Leaflet popup styling adjustments */
 .leaflet-popup-content-wrapper {
-  border-radius: 0.5rem;
-  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  border-radius: 1rem;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
   padding: 0;
   overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .leaflet-popup-content {
-  margin: 0.75rem 1rem;
+  margin: 0.85rem 1.1rem;
   line-height: 1.4;
 }

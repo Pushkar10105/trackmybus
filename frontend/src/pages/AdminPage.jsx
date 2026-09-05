@@ -17,19 +17,32 @@ import {
   ChevronRight,
   Phone,
   Lock,
+  Search,
+  Check,
+  Download,
+  AlertCircle,
+  Settings,
+  Eye,
+  LogOut,
+  Radio,
+  Sliders,
+  Layers
 } from 'lucide-react';
 
 export default function AdminPage() {
   const { user, isAuthenticated, role, login, logout } = useAuth();
 
   // Admin login form state
-  const [phone, setPhone] = useState('9000000001'); // prefilled seeded admin
-  const [password, setPassword] = useState('password123'); // prefilled seeded password
+  const [phone, setPhone] = useState('9000000001'); // seeded admin
+  const [password, setPassword] = useState('password123'); // seeded password
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
   // Active Tab: 'routes' | 'buses' | 'issues' | 'lostfound'
-  const [activeTab, setActiveTab] = useState('issues');
+  const [activeTab, setActiveTab] = useState('routes');
+
+  // Clock
+  const [clockTime, setClockTime] = useState('');
 
   // Data states
   const [routes, setRoutes] = useState([]);
@@ -39,6 +52,12 @@ export default function AdminPage() {
   const [lostFoundItems, setLostFoundItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionNotice, setActionNotice] = useState(null);
+
+  // Search & Filters
+  const [routesSearch, setRoutesSearch] = useState('');
+  const [issuesSort, setIssuesSort] = useState('severity'); // 'severity' | 'time'
+  const [lfFilter, setLfFilter] = useState('All');
+  const [lfSearch, setLfSearch] = useState('');
 
   // Add Route Modal state
   const [addRouteModalOpen, setAddRouteModalOpen] = useState(false);
@@ -61,20 +80,29 @@ export default function AdminPage() {
   const [newBusNumber, setNewBusNumber] = useState('');
   const [newBusDriverPhone, setNewBusDriverPhone] = useState('');
 
-  // Handle Login
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoginError('');
-    setLoginLoading(true);
+  // Add Lost & Found Item Drawer state
+  const [logItemDrawerOpen, setLogItemDrawerOpen] = useState(false);
+  const [logItemType, setLogItemType] = useState('found');
+  const [logItemDesc, setLogItemDesc] = useState('');
+  const [logItemPhone, setLogItemPhone] = useState('');
+  const [logItemRouteId, setLogItemRouteId] = useState('');
 
-    const res = await login(phone.trim(), password);
-    if (!res.success) {
-      setLoginError(res.error || 'Authentication failed');
-    } else if (res.user.role !== 'admin') {
-      setLoginError('Access denied: Account role is not an Administrator.');
-    }
-    setLoginLoading(false);
-  };
+  // Telemetry inspection modal
+  const [inspectModalData, setInspectModalData] = useState(null);
+
+  // Clock update
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      setClockTime(`${h}:${m}:${s} IST`);
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Fetch data based on active tab
   const refreshData = async () => {
@@ -102,9 +130,9 @@ export default function AdminPage() {
 
   useEffect(() => {
     refreshData();
-  }, [activeTab, isAuthenticated, role]);
+  }, [isAuthenticated, role, activeTab]);
 
-  // Load stops when expanding a route
+  // Load single route details when expanded
   const toggleExpandRoute = async (routeId) => {
     if (expandedRouteId === routeId) {
       setExpandedRouteId(null);
@@ -116,750 +144,1230 @@ export default function AdminPage() {
         const details = await routesApi.getById(routeId);
         setRouteDetailsMap((prev) => ({ ...prev, [routeId]: details }));
       } catch (err) {
-        console.error('Failed to load stops:', err);
+        console.error('Failed to load route stops:', err);
       }
     }
   };
 
-  // Resolve issue group
-  const handleResolveIssue = async (busId, category) => {
+  // Handle Login
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+
     try {
-      await issuesApi.resolve(busId, category);
-      setActionNotice({ type: 'success', text: `Resolved all open ${category} complaints for Bus ${busId}` });
-      refreshData();
-      setTimeout(() => setActionNotice(null), 3000);
+      const res = await login(phone.trim(), password);
+      if (!res.success) {
+        setLoginError(res.error || 'Authentication failed');
+      } else if (res.user.role !== 'admin') {
+        setLoginError('Access denied: Account role is not an Administrator.');
+      }
     } catch (err) {
-      setActionNotice({ type: 'error', text: err.message || 'Failed to resolve issues' });
+      setLoginError(err?.message || 'Login error');
+    } finally {
+      setLoginLoading(false);
     }
   };
 
-  // Update Lost & Found item status
-  const handleUpdateLfStatus = async (id, newStatus) => {
-    try {
-      await lostFoundApi.updateStatus(id, newStatus);
-      setActionNotice({ type: 'success', text: `Item #${id} status updated to ${newStatus}` });
-      refreshData();
-      setTimeout(() => setActionNotice(null), 2500);
-    } catch (err) {
-      setActionNotice({ type: 'error', text: err.message || 'Failed to update status' });
-    }
+  const showNotice = (msg, type = 'success') => {
+    setActionNotice({ msg, type });
+    setTimeout(() => setActionNotice(null), 4000);
   };
 
-  // Add Route
+  // Route Handlers
   const handleCreateRoute = async (e) => {
     e.preventDefault();
     try {
       await adminApi.createRoute({
-        name: newRouteName,
-        start_point: newRouteStart,
-        end_point: newRouteEnd,
-        city_code: newRouteCity,
+        name: newRouteName.trim(),
+        start_point: newRouteStart.trim(),
+        end_point: newRouteEnd.trim(),
+        city_code: newRouteCity.trim(),
       });
+      showNotice(`Route "${newRouteName}" created successfully!`);
       setAddRouteModalOpen(false);
       setNewRouteName('');
       setNewRouteStart('');
       setNewRouteEnd('');
       refreshData();
     } catch (err) {
-      alert(err.message || 'Error creating route');
+      showNotice(err.message || 'Failed to create route', 'error');
     }
   };
 
-  // Add Stop
+  const handleDeleteRoute = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete route "${name}"?`)) return;
+    try {
+      await adminApi.deleteRoute(id);
+      showNotice(`Route "${name}" deleted.`);
+      refreshData();
+    } catch (err) {
+      showNotice(err.message || 'Failed to delete route', 'error');
+    }
+  };
+
+  // Stop Handlers
   const handleCreateStop = async (e) => {
     e.preventDefault();
     try {
       await adminApi.createStop({
         route_id: targetRouteId,
-        name: newStopName,
+        name: newStopName.trim(),
         lat: newStopLat,
         lng: newStopLng,
         sequence_number: newStopSeq,
       });
+      showNotice(`Stop "${newStopName}" added!`);
       setAddStopModalOpen(false);
       setNewStopName('');
       setNewStopLat('');
       setNewStopLng('');
-      // Reload route stops
-      const updated = await routesApi.getById(targetRouteId);
-      setRouteDetailsMap((prev) => ({ ...prev, [targetRouteId]: updated }));
+      // Reload route details
+      const details = await routesApi.getById(targetRouteId);
+      setRouteDetailsMap((prev) => ({ ...prev, [targetRouteId]: details }));
     } catch (err) {
-      alert(err.message || 'Error creating stop');
+      showNotice(err.message || 'Failed to add stop', 'error');
     }
   };
 
-  // Add Bus
+  const handleDeleteStop = async (stopId, routeId) => {
+    if (!window.confirm('Delete this stop?')) return;
+    try {
+      await adminApi.deleteStop(stopId);
+      showNotice('Stop removed from sequence.');
+      const details = await routesApi.getById(routeId);
+      setRouteDetailsMap((prev) => ({ ...prev, [routeId]: details }));
+    } catch (err) {
+      showNotice(err.message || 'Failed to delete stop', 'error');
+    }
+  };
+
+  // Bus Handlers
   const handleCreateBus = async (e) => {
     e.preventDefault();
     try {
       await adminApi.createBus({
         route_id: newBusRouteId || null,
-        bus_number: newBusNumber,
-        driver_phone: newBusDriverPhone || null,
+        bus_number: newBusNumber.trim(),
+        driver_phone: newBusDriverPhone.trim() || null,
       });
+      showNotice(`Bus ${newBusNumber} added to active fleet!`);
       setAddBusModalOpen(false);
       setNewBusNumber('');
       setNewBusDriverPhone('');
-      setActionNotice({ type: 'success', text: `Bus ${newBusNumber} successfully added to fleet!` });
-      setTimeout(() => setActionNotice(null), 3000);
-    } catch (err) {
-      alert(err.message || 'Error registering bus');
-    }
-  };
-
-  // Delete Route
-  const handleDeleteRoute = async (id) => {
-    if (!window.confirm('Delete this route and all its stops?')) return;
-    try {
-      await adminApi.deleteRoute(id);
+      setNewBusRouteId('');
       refreshData();
     } catch (err) {
-      alert(err.message || 'Error deleting route');
+      showNotice(err.message || 'Failed to create bus', 'error');
     }
   };
 
-  // Delete Stop
-  const handleDeleteStop = async (routeId, stopId) => {
-    if (!window.confirm('Delete this stop?')) return;
+  const handleDeleteBus = async (id, busNum) => {
+    if (!window.confirm(`Decommission bus ${busNum}?`)) return;
     try {
-      await adminApi.deleteStop(stopId);
-      const updated = await routesApi.getById(routeId);
-      setRouteDetailsMap((prev) => ({ ...prev, [routeId]: updated }));
+      await adminApi.deleteBus(id);
+      showNotice(`Bus ${busNum} removed from fleet.`);
+      refreshData();
     } catch (err) {
-      alert(err.message || 'Error deleting stop');
+      showNotice(err.message || 'Failed to delete bus', 'error');
     }
   };
 
-  // 1. Admin Login Screen if not authenticated
+  // Issue Handlers
+  const handleResolveIssue = async (busId, category) => {
+    try {
+      await issuesApi.resolve(busId, category);
+      showNotice(`Resolved issue on Bus ID ${busId}`);
+      refreshData();
+    } catch (err) {
+      showNotice(err.message || 'Failed to resolve issue', 'error');
+    }
+  };
+
+  // Lost & Found Status Update
+  const handleUpdateLfStatus = async (id, newStatus) => {
+    try {
+      await lostFoundApi.updateStatus(id, newStatus);
+      showNotice(`Item #${id} status changed to ${newStatus}`);
+      refreshData();
+    } catch (err) {
+      showNotice(err.message || 'Failed to update item status', 'error');
+    }
+  };
+
+  // Log Depot Item
+  const handleLogDepotItem = async (e) => {
+    e.preventDefault();
+    try {
+      await lostFoundApi.submit({
+        type: logItemType,
+        route_id: logItemRouteId ? Number(logItemRouteId) : null,
+        description: logItemDesc,
+        approx_time: new Date().toISOString(),
+        contact_phone: logItemPhone || 'Custodian Logged',
+      });
+      showNotice('Item logged in depot inventory ledger.');
+      setLogItemDrawerOpen(false);
+      setLogItemDesc('');
+      setLogItemPhone('');
+      refreshData();
+    } catch (err) {
+      showNotice(err.message || 'Failed to log item', 'error');
+    }
+  };
+
+  // CSV Ledger Download
+  const downloadLedger = () => {
+    const rows = [
+      ['Tracking ID', 'Type', 'Description', 'Reported Time', 'Contact Phone', 'Status'],
+      ...lostFoundItems.map((item) => [
+        `#LF-${item.id}`,
+        item.type?.toUpperCase() || 'FOUND',
+        `"${(item.description || '').replace(/"/g, '""')}"`,
+        item.approx_time || '',
+        item.contact_phone || '',
+        item.status || 'open',
+      ]),
+    ];
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `RTC_Lost_Found_Ledger_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ---------------------------------------------------------------------------
+  // STATE 1: Unauthenticated Admin Login
+  // ---------------------------------------------------------------------------
   if (!isAuthenticated || role !== 'admin') {
     return (
-      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center p-4 bg-slate-900">
-        <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center mx-auto text-white shadow-lg">
-              <ShieldCheck className="w-8 h-8" />
+      <div className="flex-1 bg-surface flex flex-col items-center justify-center p-4 py-12 select-none">
+        <div className="w-full max-w-md bg-canvas rounded-2xl shadow-xl p-6 border border-black/10 flex flex-col gap-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center font-bold text-sm shadow-xs">
+              <ShieldCheck className="w-5 h-5 text-white" />
             </div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Admin Portal</h2>
-            <p className="text-xs text-slate-500 font-medium">Municipal Transit Operations Management</p>
+            <div>
+              <h1 className="font-display font-bold text-xl text-ink">Transit Authority Desk</h1>
+              <p className="text-xs text-body-muted">Operations Controller Terminal</p>
+            </div>
           </div>
 
           {loginError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700">
-              {loginError}
+            <div className="p-3.5 bg-black text-white rounded-xl text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span>{loginError}</span>
             </div>
           )}
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-slate-400" />
+              <label className="block text-xs font-bold text-ink uppercase tracking-wider mb-1">
                 Admin Phone
               </label>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. 9000000001"
-                className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                placeholder="9000000001"
                 required
+                className="w-full bg-canvas-soft rounded-xl px-3.5 py-2.5 text-xs text-ink font-medium border border-transparent focus:border-black focus:bg-canvas focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                Password
+              <label className="block text-xs font-bold text-ink uppercase tracking-wider mb-1">
+                Security Password
               </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full text-base font-medium px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 required
+                className="w-full bg-canvas-soft rounded-xl px-3.5 py-2.5 text-xs text-ink font-medium border border-transparent focus:border-black focus:bg-canvas focus:outline-none font-mono"
               />
             </div>
 
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full py-4 rounded-xl font-black text-base uppercase tracking-wider bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg transition active:scale-98 disabled:opacity-50"
+              className="w-full mt-2 bg-primary text-white rounded-full py-3 px-4 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-black-elevated active:scale-95 transition-all shadow-md disabled:opacity-50"
             >
-              {loginLoading ? 'Authenticating...' : 'Sign In as Admin'}
+              <span>{loginLoading ? 'Authenticating...' : 'Sign In to Operations Terminal'}</span>
+              <ChevronRight className="w-4 h-4" />
             </button>
           </form>
 
-          <div className="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-500 text-center">
-            Demo admin seeded in database: <br />
-            <strong className="text-slate-800">9000000001</strong> / <strong className="text-slate-800">password123</strong>
-          </div>
+          <p className="text-[11px] text-body-muted text-center pt-2">
+            Restricted Access: Authorized Telangana RTC personnel and dispatchers only.
+          </p>
         </div>
       </div>
     );
   }
 
-  // 2. Authenticated Admin Dashboard
+  // ---------------------------------------------------------------------------
+  // STATE 2: Authenticated Admin Operations Terminal
+  // ---------------------------------------------------------------------------
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-slate-100 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div>
-            <span className="text-xs uppercase tracking-wider font-bold text-indigo-600">Operations Control</span>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <ShieldCheck className="w-7 h-7 text-indigo-600" />
-              Transit Fleet & Community Triage
-            </h1>
+    <div className="flex-1 bg-surface flex flex-col md:flex-row min-h-[calc(100vh-64px)] select-none">
+      {/* Left Operations Terminal Sidebar */}
+      <aside className="w-full md:w-64 bg-surface-container-low border-r border-black/10 flex flex-col justify-between pt-6 pb-6 px-4 flex-shrink-0">
+        <div className="flex flex-col gap-6">
+          <div className="px-2 flex flex-col gap-1">
+            <span className="font-display font-bold text-base tracking-tight text-ink uppercase">
+              HYD-RTC
+            </span>
+            <span className="text-[10px] text-body-muted uppercase tracking-wider font-semibold">
+              Operations Terminal
+            </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500">
-              Admin: <strong className="text-slate-800">{user?.phone}</strong>
-            </span>
-            <button
-              onClick={logout}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 transition"
-            >
-              Log Out
-            </button>
-          </div>
+          <nav className="flex flex-col gap-1.5">
+            {[
+              { id: 'routes', label: 'Routes & Topology', icon: MapPin },
+              { id: 'buses', label: 'Active Fleet', icon: Bus },
+              { id: 'issues', label: 'Incident Triage', icon: AlertTriangle },
+              { id: 'lostfound', label: 'Lost & Found', icon: Package },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center px-4 py-2.5 rounded-full font-semibold text-xs gap-3 transition-all ${
+                    isActive
+                      ? 'bg-primary text-white shadow-md'
+                      : 'text-body hover:bg-surface-container-high hover:text-ink'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* Action Notice Alert */}
+        {/* Depot Status Card */}
+        <div className="flex flex-col gap-3 pt-4">
+          <div className="p-3.5 rounded-2xl bg-canvas border border-black/5 flex flex-col gap-1.5 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-body-muted uppercase tracking-wider font-bold">
+                Depot Status
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            </div>
+            <span className="font-bold text-xs text-ink">Depot Central</span>
+            <span className="text-[10px] text-body-muted">Sector 04 • Hyderabad</span>
+          </div>
+
+          <button
+            onClick={logout}
+            className="flex items-center justify-center px-4 py-2 rounded-full text-body hover:bg-surface-container-high hover:text-red-600 transition-all text-xs font-semibold gap-2"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Terminal Workspace */}
+      <main className="flex-1 flex flex-col min-w-0 p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
+        {/* Terminal Header */}
+        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2">
+          <div className="flex items-center gap-3">
+            <h1 className="font-display font-bold text-xl text-ink">Transit Authority Desk</h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-canvas-soft text-ink font-bold text-[10px]">
+              v2.4
+            </span>
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-canvas-soft">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-[10px] text-ink font-bold tracking-wide">
+                Depot Central • LIVE
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <div className="flex items-center gap-1.5 text-body-muted font-mono">
+              <Clock className="w-3.5 h-3.5" />
+              <span>{clockTime}</span>
+            </div>
+            <div className="h-4 w-px bg-surface-pressed"></div>
+            <div className="flex items-center gap-2">
+              <div className="text-right">
+                <div className="text-xs font-bold text-ink">Desk Controller</div>
+                <div className="text-[10px] text-body-muted font-mono">{user?.phone}</div>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold text-xs">
+                A
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Global Notice Toast */}
         {actionNotice && (
           <div
-            className={`p-4 rounded-xl text-xs font-bold flex items-center gap-2 ${
-              actionNotice.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-rose-50 text-rose-800 border border-rose-200'
+            className={`p-3.5 rounded-2xl text-xs flex items-center gap-2 animate-in fade-in ${
+              actionNotice.type === 'error'
+                ? 'bg-red-50 text-red-900 border border-red-200'
+                : 'bg-emerald-50 text-emerald-950 border border-emerald-200'
             }`}
           >
-            <CheckCircle className="w-4 h-4 shrink-0" />
-            <span>{actionNotice.text}</span>
+            <CheckCircle className="w-4 h-4 flex-shrink-0" />
+            <span className="font-medium">{actionNotice.msg}</span>
           </div>
         )}
 
-        {/* Dashboard Tabs */}
-        <div className="flex border-b border-slate-200 bg-white rounded-t-2xl px-4 pt-2">
-          {[
-            { id: 'issues', label: 'Community Issues', icon: AlertTriangle },
-            { id: 'routes', label: 'Routes & Stops', icon: MapPin },
-            { id: 'buses', label: 'Fleet Assets', icon: Bus },
-            { id: 'lostfound', label: 'Lost & Found', icon: Package },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isSelected = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-bold border-b-2 transition ${
-                  isSelected
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            );
-          })}
+        {/* Metric Sub-Header Banner */}
+        <div className="w-full bg-canvas rounded-2xl p-5 shadow-xs border border-black/10 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-body-muted">
+              <span>Metropolitan Grid Operations</span>
+              <span className="w-1 h-1 rounded-full bg-black"></span>
+              <span>South-Central Zone</span>
+            </div>
+            <h2 className="font-display font-bold text-lg text-ink">
+              {activeTab === 'routes' && 'Route & Waypoint Topology'}
+              {activeTab === 'buses' && 'Fleet Telemetry & Unit Tracking'}
+              {activeTab === 'issues' && 'Incident & Triage Queue'}
+              {activeTab === 'lostfound' && 'Depot Lost & Found Inventory Ledger'}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="bg-canvas-soft px-4 py-2 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
+                Active Routes
+              </span>
+              <span className="font-display font-bold text-sm text-ink">{routes.length || 14}</span>
+            </div>
+            <div className="bg-canvas-soft px-4 py-2 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
+                Depot Code
+              </span>
+              <span className="font-display font-bold text-sm text-ink">HYD</span>
+            </div>
+            <div className="bg-primary text-white px-4 py-2 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-mute">
+                Corridor Sync
+              </span>
+              <span className="text-xs font-bold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                REALTIME
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* Tab Content Panes */}
-        <div className="bg-white rounded-b-2xl p-6 border border-t-0 border-slate-200 shadow-sm min-h-[450px]">
-          {/* TAB 1: ISSUES TRIAGE */}
-          {activeTab === 'issues' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b pb-3">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-lg">Reported Bus Complaints</h3>
-                  <p className="text-xs text-slate-500">
-                    Calculated by trailing 7-day backlog count into High (6+), Medium (3-5), and Low (1-2) severities.
-                  </p>
-                </div>
-                <button
-                  onClick={refreshData}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-                >
-                  Refresh Feed
-                </button>
+        {/* ------------------------------------------------------------------- */}
+        {/* TAB 1: ROUTES & WAYPOINT TOPOLOGY */}
+        {/* ------------------------------------------------------------------- */}
+        {activeTab === 'routes' && (
+          <div className="space-y-4">
+            {/* Filter & Action Strip */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-mute pointer-events-none" />
+                <input
+                  type="text"
+                  value={routesSearch}
+                  onChange={(e) => setRoutesSearch(e.target.value)}
+                  placeholder="Filter corridors, terminals, stops..."
+                  className="w-full bg-canvas-soft text-xs text-ink pl-9 pr-4 py-2.5 rounded-full border-0 focus:ring-1 focus:ring-black placeholder:text-mute"
+                />
               </div>
 
-              {issues.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 text-sm">
-                  <CheckCircle className="w-10 h-10 mx-auto text-emerald-400 mb-2" />
-                  No open passenger complaints! Fleet is running smoothly.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-600">
-                    <thead className="bg-slate-50 text-slate-700 uppercase font-bold text-[11px] border-b border-slate-200">
-                      <tr>
-                        <th className="py-3 px-4">Severity</th>
-                        <th className="py-3 px-4">Bus Number</th>
-                        <th className="py-3 px-4">Category</th>
-                        <th className="py-3 px-4">Report Count</th>
-                        <th className="py-3 px-4">Last Flagged</th>
-                        <th className="py-3 px-4 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {issues.map((iss, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4">
-                            <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                iss.severity === 'high'
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : iss.severity === 'medium'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-slate-100 text-slate-800'
-                              }`}
-                            >
-                              {iss.severity}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-bold text-slate-900 font-mono">{iss.bus_number}</td>
-                          <td className="py-3 px-4 capitalize font-semibold">{iss.category}</td>
-                          <td className="py-3 px-4 font-bold text-slate-900">{iss.flag_count} flags</td>
-                          <td className="py-3 px-4 text-slate-400">
-                            {new Date(iss.last_flagged_at).toLocaleString()}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => handleResolveIssue(iss.bus_id, iss.category)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-300 font-bold transition text-[11px]"
-                            >
-                              Mark Resolved
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 2: ROUTES & STOPS */}
-          {activeTab === 'routes' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b pb-3">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-lg">Transit Route Network</h3>
-                  <p className="text-xs text-slate-500">Manage corridors, terminal points, and ordered pickup stops.</p>
-                </div>
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setAddRouteModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition"
+                  className="pill-btn bg-black text-white hover:bg-black-elevated px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xs"
                 >
-                  <Plus className="w-4 h-4" /> Add Route
+                  <Plus className="w-4 h-4" />
+                  <span>Add Route</span>
                 </button>
               </div>
+            </div>
 
-              <div className="space-y-3">
-                {routes.map((route) => {
-                  const isExpanded = expandedRouteId === route.id;
-                  const details = routeDetailsMap[route.id];
+            {/* Routes Table */}
+            <div className="bg-canvas rounded-2xl border border-black/10 shadow-xs overflow-hidden">
+              <div className="grid grid-cols-12 px-6 py-3.5 bg-surface-container-low font-bold text-[10px] uppercase tracking-wider text-body-muted">
+                <div className="col-span-3">Route Identifier</div>
+                <div className="col-span-3">Start Terminal</div>
+                <div className="col-span-3">Destination Terminal</div>
+                <div className="col-span-1 text-center">City</div>
+                <div className="col-span-2 text-right">Actions</div>
+              </div>
 
-                  return (
-                    <div
-                      key={route.id}
-                      className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm"
-                    >
-                      {/* Route Header Row */}
-                      <div
-                        onClick={() => toggleExpandRoute(route.id)}
-                        className="flex items-center justify-between p-4 bg-slate-50/70 hover:bg-slate-100/70 cursor-pointer transition select-none"
-                      >
-                        <div className="flex items-center gap-3">
-                          {isExpanded ? (
-                            <ChevronDown className="w-5 h-5 text-indigo-600" />
-                          ) : (
-                            <ChevronRight className="w-5 h-5 text-slate-400" />
-                          )}
-                          <div>
-                            <span className="font-bold text-sm text-slate-900">{route.name}</span>
-                            <span className="ml-2 text-xs text-slate-500">
-                              ({route.start_point} ➔ {route.end_point})
+              <div className="divide-y divide-black/5">
+                {routes
+                  .filter((r) =>
+                    routesSearch === '' ||
+                    r.name?.toLowerCase().includes(routesSearch.toLowerCase()) ||
+                    r.start_point?.toLowerCase().includes(routesSearch.toLowerCase()) ||
+                    r.end_point?.toLowerCase().includes(routesSearch.toLowerCase())
+                  )
+                  .map((route) => {
+                    const isExpanded = expandedRouteId === route.id;
+                    const details = routeDetailsMap[route.id];
+                    const stops = details?.stops || [];
+
+                    return (
+                      <div key={route.id} className="bg-canvas transition-colors">
+                        <div
+                          onClick={() => toggleExpandRoute(route.id)}
+                          className="grid grid-cols-12 px-6 py-4 items-center hover:bg-canvas-soft/70 transition-all cursor-pointer"
+                        >
+                          <div className="col-span-3 flex items-center gap-3">
+                            <button className="icon-btn w-6 h-6 rounded-full bg-black text-white flex items-center justify-center">
+                              {isExpanded ? (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-xs text-ink">{route.name}</span>
+                              <span className="text-[10px] text-body-muted">Arterial Corridor</span>
+                            </div>
+                          </div>
+
+                          <div className="col-span-3 text-xs text-ink font-medium">
+                            {route.start_point}
+                          </div>
+
+                          <div className="col-span-3 text-xs text-ink font-medium">
+                            {route.end_point}
+                          </div>
+
+                          <div className="col-span-1 text-center">
+                            <span className="px-2 py-0.5 rounded-full bg-surface-pressed text-[10px] font-bold text-ink">
+                              {route.city_code || 'HYD'}
                             </span>
+                          </div>
+
+                          <div className="col-span-2 flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTargetRouteId(String(route.id));
+                                setAddStopModalOpen(true);
+                              }}
+                              className="icon-btn px-2.5 py-1 rounded-full bg-canvas-soft hover:bg-surface-pressed text-[11px] font-semibold text-ink"
+                              title="Add Stop"
+                            >
+                              + Stop
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRoute(route.id, route.name);
+                              }}
+                              className="icon-btn p-1.5 rounded-full hover:bg-red-50 text-body hover:text-red-600 transition-colors"
+                              title="Delete Route"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
-                            {route.city_code}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteRoute(route.id);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"
-                            title="Delete Route"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        {/* Embedded Stop Sequence Timeline */}
+                        {isExpanded && (
+                          <div className="px-8 py-5 bg-surface-container-low border-t border-black/5 flex flex-col gap-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-ink uppercase tracking-tight">
+                                  Active Stop Sequence: {route.name}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full bg-black text-white text-[10px] font-mono">
+                                  {stops.length} Waypoints
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setTargetRouteId(String(route.id));
+                                  setAddStopModalOpen(true);
+                                }}
+                                className="pill-btn px-3 py-1 rounded-full bg-black text-white text-[11px] font-semibold flex items-center gap-1"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>Add Waypoint Stop</span>
+                              </button>
+                            </div>
+
+                            {stops.length > 0 ? (
+                              <div className="flex flex-col gap-2">
+                                {stops.map((stop, idx) => (
+                                  <div
+                                    key={stop.id || idx}
+                                    className="flex items-center justify-between p-3 bg-canvas rounded-xl border border-black/5 shadow-xs"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <span className="w-6 h-6 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
+                                        {stop.sequence_number || idx + 1}
+                                      </span>
+                                      <div className="flex flex-col">
+                                        <span className="font-bold text-xs text-ink">{stop.name}</span>
+                                        <span className="text-[10px] text-body-muted font-mono">
+                                          {Number(stop.lat).toFixed(4)}° N, {Number(stop.lng).toFixed(4)}° E
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => handleDeleteStop(stop.id, route.id)}
+                                      className="icon-btn p-1 text-body-muted hover:text-red-600 rounded-full"
+                                      title="Delete Stop"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="p-4 bg-canvas rounded-xl text-center text-xs text-body-muted border border-dashed border-black/10">
+                                No stops configured for this corridor yet.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------------- */}
+        {/* TAB 2: ACTIVE FLEET */}
+        {/* ------------------------------------------------------------------- */}
+        {activeTab === 'buses' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-ink uppercase tracking-wider">
+                Depot Fleet Inventory
+              </span>
+              <button
+                onClick={() => setAddBusModalOpen(true)}
+                className="pill-btn bg-black text-white hover:bg-black-elevated px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Register Bus Unit</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {routes.flatMap((r) => r.buses || []).length > 0 ? (
+                routes.flatMap((r) =>
+                  (r.buses || []).map((bus) => (
+                    <div
+                      key={bus.id}
+                      className="p-4 rounded-2xl bg-canvas border border-black/10 shadow-xs flex flex-col justify-between gap-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-xs">
+                            <Bus className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-ink">{bus.bus_number}</h4>
+                            <span className="text-[10px] text-body-muted font-mono">
+                              Unit #{bus.id}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-black text-white text-[10px] font-bold">
+                          Active
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 text-xs text-body pt-2 border-t border-black/5">
+                        <div className="flex justify-between">
+                          <span>Assigned Route:</span>
+                          <span className="font-bold text-ink">{bus.route_name || 'Route 127K'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Driver Phone:</span>
+                          <span className="font-mono text-ink">{bus.driver_phone || 'Unassigned'}</span>
                         </div>
                       </div>
 
-                      {/* Expanded Stops Sequence */}
-                      {isExpanded && (
-                        <div className="p-4 border-t border-slate-200 bg-white space-y-3">
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                              Sequence of Stops
-                            </h4>
-                            <button
-                              onClick={() => {
-                                setTargetRouteId(String(route.id));
-                                setNewStopSeq(String((details?.stops?.length || 0) + 1));
-                                setAddStopModalOpen(true);
-                              }}
-                              className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800"
-                            >
-                              <Plus className="w-3.5 h-3.5" /> Add Stop
-                            </button>
-                          </div>
-
-                          {!details ? (
-                            <div className="text-xs text-slate-400 py-2">Loading stops...</div>
-                          ) : details.stops?.length === 0 ? (
-                            <div className="text-xs text-slate-400 italic py-2">
-                              No stops defined for this route yet.
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {details.stops.map((stop) => (
-                                <div
-                                  key={stop.id}
-                                  className="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 bg-slate-50 text-xs"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-800 font-bold flex items-center justify-center text-[10px]">
-                                      {stop.sequence_number}
-                                    </span>
-                                    <div>
-                                      <p className="font-semibold text-slate-800">{stop.name}</p>
-                                      <p className="text-[10px] text-slate-400">
-                                        {Number(stop.lat).toFixed(4)}, {Number(stop.lng).toFixed(4)}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={() => handleDeleteStop(route.id, stop.id)}
-                                    className="text-slate-400 hover:text-rose-600 p-1"
-                                    title="Delete Stop"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <button
+                        onClick={() => handleDeleteBus(bus.id, bus.bus_number)}
+                        className="pill-btn w-full mt-1 py-1.5 rounded-full bg-canvas-soft hover:bg-red-50 text-body hover:text-red-600 text-xs font-semibold flex items-center justify-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Decommission Unit</span>
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: FLEET & BUSES */}
-          {activeTab === 'buses' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b pb-3">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-lg">Fleet Assets & Drivers</h3>
-                  <p className="text-xs text-slate-500">Vehicle registry and designated driver operational assignments.</p>
-                </div>
-                <button
-                  onClick={() => setAddBusModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition"
-                >
-                  <Plus className="w-4 h-4" /> Register Bus
-                </button>
-              </div>
-
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
-                <div className="font-bold text-slate-800">Standard Fleet Asset:</div>
-                <p className="text-slate-600">
-                  Primary demo vehicle <strong className="text-slate-900 font-mono">TS09-1234</strong> is assigned to Driver Ramesh Kumar (<strong className="text-slate-900">9000000002</strong>) on Route 10H.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: LOST & FOUND LEDGER */}
-          {activeTab === 'lostfound' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b pb-3">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-lg">Central Transit Property Ledger</h3>
-                  <p className="text-xs text-slate-500">
-                    Admin access reveals verified commuter phone numbers for property restitution.
-                  </p>
-                </div>
-                <button
-                  onClick={refreshData}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-                >
-                  Refresh
-                </button>
-              </div>
-
-              {lostFoundItems.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 text-sm">No items in the property depot.</div>
+                  ))
+                )
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-600">
-                    <thead className="bg-slate-50 text-slate-700 uppercase font-bold text-[11px] border-b border-slate-200">
-                      <tr>
-                        <th className="py-3 px-4">Type</th>
-                        <th className="py-3 px-4">Description</th>
-                        <th className="py-3 px-4">Passenger Contact</th>
-                        <th className="py-3 px-4">Approx Date</th>
-                        <th className="py-3 px-4">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {lostFoundItems.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4">
+                <div className="col-span-3 p-8 bg-canvas rounded-2xl text-center text-xs text-body-muted border border-black/10">
+                  Loading registered fleet units...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------------- */}
+        {/* TAB 3: INCIDENT TRIAGE BOARD */}
+        {/* ------------------------------------------------------------------- */}
+        {activeTab === 'issues' && (
+          <div className="space-y-4">
+            {/* Triage Metrics Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-canvas p-4 rounded-2xl border border-black/10 shadow-xs flex flex-col justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
+                  High Risk Alerts
+                </span>
+                <span className="font-display font-bold text-2xl text-red-600 mt-2">
+                  {issues.filter((i) => (i.report_count || 1) >= 3).length}
+                </span>
+                <span className="text-[10px] text-body-muted mt-1">Bus units flagged &gt;=3 times</span>
+              </div>
+
+              <div className="bg-canvas p-4 rounded-2xl border border-black/10 shadow-xs flex flex-col justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
+                  Total Active Issues
+                </span>
+                <span className="font-display font-bold text-2xl text-ink mt-2">
+                  {issues.length}
+                </span>
+                <span className="text-[10px] text-body-muted mt-1">Across all transit corridors</span>
+              </div>
+
+              <div className="bg-black text-white p-4 rounded-2xl shadow-xs flex flex-col justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-mute">
+                  Depot Ops Triage
+                </span>
+                <span className="font-display font-bold text-lg text-white mt-2">
+                  Sector 04 Central
+                </span>
+                <span className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  Active Dispatch Protocol
+                </span>
+              </div>
+            </div>
+
+            {/* Issues List */}
+            <div className="bg-canvas rounded-2xl border border-black/10 shadow-xs p-5 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-black/5">
+                <span className="text-xs font-bold text-ink uppercase tracking-tight">
+                  Commuter Incident Queue ({issues.length})
+                </span>
+                <span className="text-[10px] text-body-muted">
+                  Real-time complaints submitted from commuter maps
+                </span>
+              </div>
+
+              {issues.length > 0 ? (
+                <div className="space-y-3">
+                  {issues.map((issue, idx) => {
+                    const isHigh = (issue.report_count || 1) >= 3;
+                    return (
+                      <div
+                        key={`issue-${idx}`}
+                        className="p-4 rounded-2xl bg-canvas-soft/80 border border-black/5 hover:border-black/20 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0 text-ink">
+                            <AlertCircle className="w-5 h-5 text-black" />
+                          </div>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-xs text-ink font-mono">
+                                {issue.bus_number}
+                              </span>
+                              <span className="text-body-muted">•</span>
+                              <span className="font-semibold text-xs text-ink">{issue.category}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isHigh ? 'bg-red-600 text-white' : 'bg-neutral-200 text-neutral-800'
+                                }`}
+                              >
+                                {issue.report_count || 1} Flags
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-body-muted mt-1 leading-relaxed">
+                              {issue.latest_description || 'No detailed note provided.'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end md:self-auto flex-shrink-0">
+                          <button
+                            onClick={() =>
+                              setInspectModalData({
+                                bus: issue.bus_number,
+                                category: issue.category,
+                                flags: issue.report_count || 1,
+                                desc: issue.latest_description,
+                              })
+                            }
+                            className="pill-btn px-3.5 py-1.5 rounded-full bg-canvas border border-black/10 hover:bg-surface-pressed text-ink text-xs font-semibold"
+                          >
+                            Telemetry
+                          </button>
+                          <button
+                            onClick={() => handleResolveIssue(issue.bus_id, issue.category)}
+                            className="pill-btn px-4 py-1.5 rounded-full bg-black text-white hover:bg-black-elevated text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Resolve</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-xs text-body-muted">
+                  No open issues currently reported. Fleet operating cleanly!
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------------- */}
+        {/* TAB 4: LOST & FOUND INVENTORY LEDGER */}
+        {/* ------------------------------------------------------------------- */}
+        {activeTab === 'lostfound' && (
+          <div className="space-y-4">
+            {/* Filter and CSV Export Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-mute pointer-events-none" />
+                <input
+                  type="text"
+                  value={lfSearch}
+                  onChange={(e) => setLfSearch(e.target.value)}
+                  placeholder="Search item, contact, description..."
+                  className="w-full bg-canvas-soft text-xs text-ink pl-9 pr-4 py-2.5 rounded-full border-0 focus:ring-1 focus:ring-black placeholder:text-mute"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center p-1 bg-canvas-soft rounded-full text-xs font-semibold">
+                  {['All', 'Open', 'Matched', 'Closed'].map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setLfFilter(f)}
+                      className={`px-3 py-1 rounded-full transition-all ${
+                        lfFilter === f ? 'bg-black text-white shadow-xs' : 'text-body hover:text-ink'
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={downloadLedger}
+                  className="icon-btn h-9 w-9 bg-canvas-soft hover:bg-surface-pressed text-ink rounded-full flex items-center justify-center"
+                  title="Export CSV"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={() => setLogItemDrawerOpen(true)}
+                  className="pill-btn bg-black text-white hover:bg-black-elevated px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Log Depot Item</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Inventory Table */}
+            <div className="bg-canvas rounded-2xl border border-black/10 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-surface-container-low text-body-muted text-[10px] font-bold uppercase tracking-wider">
+                      <th className="py-3.5 px-6">Tracking ID</th>
+                      <th className="py-3.5 px-4">Type</th>
+                      <th className="py-3.5 px-6 min-w-[240px]">Description</th>
+                      <th className="py-3.5 px-4">Reported</th>
+                      <th className="py-3.5 px-6">Contact Number</th>
+                      <th className="py-3.5 px-6 text-right">Custodian State</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5 text-xs text-ink font-medium">
+                    {lostFoundItems
+                      .filter((item) => {
+                        const matchSearch =
+                          lfSearch === '' ||
+                          item.description?.toLowerCase().includes(lfSearch.toLowerCase()) ||
+                          item.contact_phone?.includes(lfSearch);
+                        const matchFilter =
+                          lfFilter === 'All' ||
+                          (item.status || 'open').toLowerCase() === lfFilter.toLowerCase();
+                        return matchSearch && matchFilter;
+                      })
+                      .map((item) => (
+                        <tr key={item.id} className="hover:bg-canvas-soft/70 transition-colors">
+                          <td className="py-3.5 px-6 font-bold font-mono">#LF-{item.id}</td>
+                          <td className="py-3.5 px-4">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                item.type === 'found' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                item.type === 'found' ? 'bg-canvas-soft text-ink' : 'bg-black text-white'
                               }`}
                             >
-                              {item.type}
+                              {(item.type || 'FOUND').toUpperCase()}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-semibold text-slate-900 max-w-xs">{item.description}</td>
-                          <td className="py-3 px-4 font-mono font-bold text-indigo-700">
-                            {item.contact_phone || 'N/A'}
+                          <td className="py-3.5 px-6">
+                            <div className="font-bold text-ink">{item.description}</div>
+                            {item.bus_number && (
+                              <div className="text-[10px] text-body-muted">Bus: {item.bus_number}</div>
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-slate-400">
-                            {new Date(item.approx_time).toLocaleString()}
+                          <td className="py-3.5 px-4 text-[11px] text-body-muted whitespace-nowrap">
+                            {item.approx_time ? new Date(item.approx_time).toLocaleDateString() : 'Recent'}
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-3.5 px-6 font-mono text-xs whitespace-nowrap">
+                            {item.contact_phone ? (
+                              <a
+                                href={`tel:${item.contact_phone}`}
+                                className="hover:underline flex items-center gap-1 text-ink"
+                              >
+                                <Phone className="w-3 h-3 text-body-muted" />
+                                <span>{item.contact_phone}</span>
+                              </a>
+                            ) : (
+                              <span className="text-body-muted font-normal">—</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-6 text-right whitespace-nowrap">
                             <select
-                              value={item.status}
+                              value={item.status || 'open'}
                               onChange={(e) => handleUpdateLfStatus(item.id, e.target.value)}
-                              className="px-2 py-1 bg-white border border-slate-200 rounded text-xs font-semibold capitalize focus:ring-1 focus:ring-indigo-500"
+                              className="px-2.5 py-1 rounded-full bg-canvas-soft text-ink font-bold text-[10px] border border-black/10 focus:outline-none cursor-pointer"
                             >
-                              <option value="open">Open</option>
-                              <option value="matched">Matched</option>
-                              <option value="closed">Closed</option>
+                              <option value="open">● Open</option>
+                              <option value="matched">◐ Matched</option>
+                              <option value="closed">✕ Closed</option>
                             </select>
                           </td>
                         </tr>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* MODAL: ADD ROUTE */}
-      <Modal isOpen={addRouteModalOpen} onClose={() => setAddRouteModalOpen(false)} title="Add Transit Corridor">
-        <form onSubmit={handleCreateRoute} className="space-y-3 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Route Name</label>
-            <input
-              type="text"
-              placeholder="e.g. Route 22D - Old City Link"
-              value={newRouteName}
-              onChange={(e) => setNewRouteName(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
-              required
-            />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+        )}
+      </main>
+
+      {/* ------------------------------------------------------------------- */}
+      {/* MODALS */}
+      {/* ------------------------------------------------------------------- */}
+
+      {/* Add Route Modal */}
+      {addRouteModalOpen && (
+        <Modal isOpen={true} onClose={() => setAddRouteModalOpen(false)} title="Create Transit Route">
+          <form onSubmit={handleCreateRoute} className="space-y-4">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Start Point</label>
+              <label className="block text-xs font-semibold text-ink mb-1">Route Identifier</label>
               <input
                 type="text"
-                placeholder="e.g. Charminar"
+                value={newRouteName}
+                onChange={(e) => setNewRouteName(e.target.value)}
+                placeholder="e.g. Route 127K"
+                required
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-ink mb-1">Origin Terminal</label>
+              <input
+                type="text"
                 value={newRouteStart}
                 onChange={(e) => setNewRouteStart(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                placeholder="e.g. Koti Bus Station"
                 required
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">End Point</label>
+              <label className="block text-xs font-semibold text-ink mb-1">Destination Terminal</label>
               <input
                 type="text"
-                placeholder="e.g. Falaknuma"
                 value={newRouteEnd}
                 onChange={(e) => setNewRouteEnd(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                placeholder="e.g. Kondapur Bus Depot"
                 required
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
               />
             </div>
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">City Code</label>
-            <input
-              type="text"
-              value={newRouteCity}
-              onChange={(e) => setNewRouteCity(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono uppercase"
-              required
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setAddRouteModalOpen(false)}
-              className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-1.5 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow"
-            >
-              Save Corridor
-            </button>
-          </div>
-        </form>
-      </Modal>
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAddRouteModalOpen(false)}
+                className="pill-btn px-4 py-2 text-xs font-semibold rounded-full border border-black/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="pill-btn px-5 py-2 text-xs font-bold rounded-full bg-black text-white hover:bg-black-elevated shadow-xs"
+              >
+                Create Corridor
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
-      {/* MODAL: ADD STOP */}
-      <Modal isOpen={addStopModalOpen} onClose={() => setAddStopModalOpen(false)} title="Add Sequential Stop">
-        <form onSubmit={handleCreateStop} className="space-y-3 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Stop Name</label>
-            <input
-              type="text"
-              placeholder="e.g. Jubilee Hills Check Post"
-              value={newStopName}
-              onChange={(e) => setNewStopName(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
-              required
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+      {/* Add Stop Modal */}
+      {addStopModalOpen && (
+        <Modal isOpen={true} onClose={() => setAddStopModalOpen(false)} title="Add Waypoint Stop">
+          <form onSubmit={handleCreateStop} className="space-y-4">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Latitude (Lat)</label>
+              <label className="block text-xs font-semibold text-ink mb-1">Stop Name</label>
+              <input
+                type="text"
+                value={newStopName}
+                onChange={(e) => setNewStopName(e.target.value)}
+                placeholder="e.g. Punjagutta Metro Gate 3"
+                required
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1">Latitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={newStopLat}
+                  onChange={(e) => setNewStopLat(e.target.value)}
+                  placeholder="17.4260"
+                  required
+                  className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1">Longitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={newStopLng}
+                  onChange={(e) => setNewStopLng(e.target.value)}
+                  placeholder="78.4480"
+                  required
+                  className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-ink mb-1">Sequence Order Number</label>
               <input
                 type="number"
-                step="any"
-                placeholder="e.g. 17.4321"
-                value={newStopLat}
-                onChange={(e) => setNewStopLat(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                value={newStopSeq}
+                onChange={(e) => setNewStopSeq(e.target.value)}
+                min="1"
                 required
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
+              />
+            </div>
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAddStopModalOpen(false)}
+                className="pill-btn px-4 py-2 text-xs font-semibold rounded-full border border-black/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="pill-btn px-5 py-2 text-xs font-bold rounded-full bg-black text-white hover:bg-black-elevated shadow-xs"
+              >
+                Add Stop
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Add Bus Modal */}
+      {addBusModalOpen && (
+        <Modal isOpen={true} onClose={() => setAddBusModalOpen(false)} title="Register Bus Unit">
+          <form onSubmit={handleCreateBus} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-ink mb-1">Bus Number Plate</label>
+              <input
+                type="text"
+                value={newBusNumber}
+                onChange={(e) => setNewBusNumber(e.target.value)}
+                placeholder="e.g. TS09-UB101"
+                required
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none font-mono"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Longitude (Lng)</label>
+              <label className="block text-xs font-semibold text-ink mb-1">Assigned Route</label>
+              <select
+                value={newBusRouteId}
+                onChange={(e) => setNewBusRouteId(e.target.value)}
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
+              >
+                <option value="">Select Route</option>
+                {routes.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-ink mb-1">
+                Driver Mobile Phone <span className="text-mute font-normal">(Optional)</span>
+              </label>
               <input
-                type="number"
-                step="any"
-                placeholder="e.g. 78.4112"
-                value={newStopLng}
-                onChange={(e) => setNewStopLng(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
-                required
+                type="tel"
+                value={newBusDriverPhone}
+                onChange={(e) => setNewBusDriverPhone(e.target.value)}
+                placeholder="9000000002"
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
               />
             </div>
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Sequence Order Number</label>
-            <input
-              type="number"
-              min="1"
-              value={newStopSeq}
-              onChange={(e) => setNewStopSeq(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
-              required
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setAddStopModalOpen(false)}
-              className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-1.5 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow"
-            >
-              Save Stop
-            </button>
-          </div>
-        </form>
-      </Modal>
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAddBusModalOpen(false)}
+                className="pill-btn px-4 py-2 text-xs font-semibold rounded-full border border-black/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="pill-btn px-5 py-2 text-xs font-bold rounded-full bg-black text-white hover:bg-black-elevated shadow-xs"
+              >
+                Register Unit
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
-      {/* MODAL: REGISTER BUS */}
-      <Modal isOpen={addBusModalOpen} onClose={() => setAddBusModalOpen(false)} title="Register Fleet Bus">
-        <form onSubmit={handleCreateBus} className="space-y-3 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Bus Number (License / Fleet ID)</label>
-            <input
-              type="text"
-              placeholder="e.g. TS09-5678"
-              value={newBusNumber}
-              onChange={(e) => setNewBusNumber(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono uppercase"
-              required
-            />
+      {/* Log Depot Item Modal */}
+      {logItemDrawerOpen && (
+        <Modal isOpen={true} onClose={() => setLogItemDrawerOpen(false)} title="Log Depot Item">
+          <form onSubmit={handleLogDepotItem} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-ink mb-1.5">Classification</label>
+              <div className="grid grid-cols-2 p-1 bg-canvas-soft rounded-full text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setLogItemType('found')}
+                  className={`py-1.5 rounded-full transition-all ${
+                    logItemType === 'found' ? 'bg-black text-white shadow-xs' : 'text-body'
+                  }`}
+                >
+                  Found in Transit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogItemType('lost')}
+                  className={`py-1.5 rounded-full transition-all ${
+                    logItemType === 'lost' ? 'bg-black text-white shadow-xs' : 'text-body'
+                  }`}
+                >
+                  Passenger Claim
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-ink mb-1">Description</label>
+              <textarea
+                value={logItemDesc}
+                onChange={(e) => setLogItemDesc(e.target.value)}
+                placeholder="Item details, where found/lost, distinguishing marks..."
+                required
+                rows="3"
+                className="w-full bg-canvas-soft text-xs text-ink p-3 rounded-xl border border-transparent focus:border-black focus:outline-none resize-none"
+              ></textarea>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-ink mb-1">
+                Contact Phone / Custodian ID
+              </label>
+              <input
+                type="tel"
+                value={logItemPhone}
+                onChange={(e) => setLogItemPhone(e.target.value)}
+                placeholder="+91 98491 55201"
+                className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setLogItemDrawerOpen(false)}
+                className="pill-btn px-4 py-2 text-xs font-semibold rounded-full border border-black/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="pill-btn px-5 py-2 text-xs font-bold rounded-full bg-black text-white hover:bg-black-elevated shadow-xs"
+              >
+                Add to Ledger
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Telemetry Inspection Modal */}
+      {inspectModalData && (
+        <Modal
+          isOpen={true}
+          onClose={() => setInspectModalData(null)}
+          title={`Telemetry Log: ${inspectModalData.bus}`}
+        >
+          <div className="space-y-4">
+            <div className="p-4 bg-canvas-soft rounded-2xl space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-body-muted">Category:</span>
+                <span className="font-bold text-ink">{inspectModalData.category}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-body-muted">Complaint Flags:</span>
+                <span className="font-bold text-red-600">{inspectModalData.flags} commuter reports</span>
+              </div>
+              <div className="pt-2 border-t border-black/5 text-xs text-body leading-relaxed">
+                <strong>Report Note:</strong> {inspectModalData.desc || 'No further notes.'}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setInspectModalData(null)}
+                className="pill-btn px-5 py-2 rounded-full bg-black text-white text-xs font-bold"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Assign to Route</label>
-            <select
-              value={newBusRouteId}
-              onChange={(e) => setNewBusRouteId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white"
-            >
-              <option value="">Unassigned</option>
-              {routes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Driver Phone Number (Optional)</label>
-            <input
-              type="tel"
-              placeholder="e.g. 9000000002"
-              value={newBusDriverPhone}
-              onChange={(e) => setNewBusDriverPhone(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
-            />
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              Must match a registered user with role 'driver' in the system.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setAddBusModalOpen(false)}
-              className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-1.5 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow"
-            >
-              Register Vehicle
-            </button>
-          </div>
-        </form>
-      </Modal>
+        </Modal>
+      )}
     </div>
   );
 }
