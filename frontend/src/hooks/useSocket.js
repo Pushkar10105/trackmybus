@@ -4,8 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-const rawSocketUrl = import.meta.env.VITE_SOCKET_URL || (typeof window !== 'undefined' ? window.location.origin : '');
-const SOCKET_URL = rawSocketUrl.replace(/\/+$/, '');
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 
 export function useSocket(routeId) {
   const socketRef = useRef(null);

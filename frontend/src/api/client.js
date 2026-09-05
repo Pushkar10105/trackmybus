@@ -1,8 +1,7 @@
 // src/api/client.js
 // Central HTTP client with automatic Authorization header injection
 
-const rawBaseUrl = import.meta.env.VITE_API_URL || '';
-const BASE_URL = rawBaseUrl.replace(/\/+$/, '');
+const BASE_URL = import.meta.env.VITE_API_URL || '';
 
 export async function request(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
