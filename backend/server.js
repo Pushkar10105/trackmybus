@@ -24,15 +24,28 @@ const server = http.createServer(app);
 // ---------------------------------------------------------------------------
 // CORS – allow requests from the front-end origin(s) defined in .env
 // ---------------------------------------------------------------------------
-// CORS_ORIGIN can be a single URL, comma-separated list, or '*' for any origin.
+// CORS_ORIGIN can be a single URL, comma-separated list (supports '*' as a
+// wildcard segment, e.g. "https://*.vercel.app"), or a bare '*' for any origin.
 const corsOriginEnv = process.env.CORS_ORIGIN || "*";
 const allowedOrigins = corsOriginEnv.split(",").map((s) => s.trim());
+
+// Turns a pattern like "https://*.vercel.app" into a real RegExp so wildcard
+// entries actually match subdomains instead of only matching literally.
+function originMatches(origin, pattern) {
+  if (pattern === origin) return true;
+  if (pattern.includes("*")) {
+    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp("^" + escaped.replace(/\*/g, ".*") + "$");
+    return regex.test(origin);
+  }
+  return false;
+}
 
 const corsOptions = {
   origin: corsOriginEnv === "*"
     ? true // reflect request origin, compatible with credentials
     : (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin || allowedOrigins.some((pattern) => originMatches(origin, pattern))) {
           callback(null, true);
         } else {
           callback(new Error("Not allowed by CORS"));
@@ -54,7 +67,15 @@ app.use(express.json());
 // Socket.io runs on the same port as Express by sharing the HTTP server.
 const io = new SocketIO(server, {
   cors: {
-    origin: corsOriginEnv === "*" ? true : allowedOrigins,
+    origin: corsOriginEnv === "*"
+      ? true
+      : (origin, callback) => {
+          if (!origin || allowedOrigins.some((pattern) => originMatches(origin, pattern))) {
+            callback(null, true);
+          } else {
+            callback(new Error("Not allowed by CORS"));
+          }
+        },
     methods: ["GET", "POST"],
     credentials: true,
   },
