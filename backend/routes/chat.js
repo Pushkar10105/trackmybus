@@ -128,22 +128,24 @@ async function runTool(name, args = {}) {
 }
 
 async function askGemini(message, lang) {
-  const { GoogleGenerativeAI } = require("@google/generative-ai");
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({
+  const { GoogleGenAI } = require("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  const chat = ai.chats.create({
     model: "gemini-3.6-flash",
-    systemInstruction:
-      "You are the TrackMyBus assistant. Always reply in the same language the user wrote in " +
-      `(the lang hint is "${lang || "en"}"). Keep answers to 1 or 2 short sentences. ` +
-      "Only answer questions about bus timings, routes, and reporting bus issues. " +
-      "If asked anything else, politely say what you can help with.",
-    tools: [{ functionDeclarations: TOOLS }],
+    config: {
+      systemInstruction:
+        "You are the TrackMyBus assistant. Always reply in the same language the user wrote in " +
+        `(the lang hint is "${lang || "en"}"). Keep answers to 1 or 2 short sentences. ` +
+        "Only answer questions about bus timings, routes, and reporting bus issues. " +
+        "If asked anything else, politely say what you can help with.",
+      tools: [{ functionDeclarations: TOOLS }],
+    },
   });
 
-  const chat = model.startChat();
-  let result = await chat.sendMessage(message);
+  let result = await chat.sendMessage({ message });
   for (let i = 0; i < 4; i++) {
-    const calls = result.response.functionCalls?.() || [];
+    const calls = result.functionCalls || [];
     if (!calls.length) break;
     const replies = [];
     for (const call of calls) {
@@ -152,9 +154,9 @@ async function askGemini(message, lang) {
         functionResponse: { name: call.name, response: { result: output } },
       });
     }
-    result = await chat.sendMessage(replies);
+    result = await chat.sendMessage({ message: replies });
   }
-  return result.response.text();
+  return result.text;
 }
 
 router.post("/", async (req, res) => {
