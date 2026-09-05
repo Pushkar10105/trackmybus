@@ -22,22 +22,43 @@ const app = express();
 const server = http.createServer(app);
 
 // ---------------------------------------------------------------------------
+// URL normalization – fix duplicate leading slashes (e.g. //api/auth/login)
+// ---------------------------------------------------------------------------
+app.use((req, _res, next) => {
+  if (req.url && req.url.startsWith("//")) {
+    req.url = req.url.replace(/^\/+/, "/");
+  }
+  next();
+});
+
+// ---------------------------------------------------------------------------
 // CORS – allow requests from the front-end origin(s) defined in .env
 // ---------------------------------------------------------------------------
 // CORS_ORIGIN can be a single URL, comma-separated list, or '*' for any origin.
 const corsOriginEnv = process.env.CORS_ORIGIN || "*";
-const allowedOrigins = corsOriginEnv.split(",").map((s) => s.trim());
+const allowedOrigins = corsOriginEnv.split(",").map((s) => s.trim().replace(/\/+$/, ""));
+
+function isOriginAllowed(origin) {
+  if (!origin) return true; // allow same-origin, mobile apps, or curl/server-side
+  if (corsOriginEnv === "*") return true;
+  return allowedOrigins.some((allowed) => {
+    if (allowed === origin) return true;
+    if (allowed.includes("*")) {
+      const regex = new RegExp("^" + allowed.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+      return regex.test(origin);
+    }
+    return false;
+  });
+}
 
 const corsOptions = {
-  origin: corsOriginEnv === "*"
-    ? true // reflect request origin, compatible with credentials
-    : (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error("Not allowed by CORS"));
-        }
-      },
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
@@ -54,7 +75,9 @@ app.use(express.json());
 // Socket.io runs on the same port as Express by sharing the HTTP server.
 const io = new SocketIO(server, {
   cors: {
-    origin: corsOriginEnv === "*" ? true : allowedOrigins,
+    origin: corsOriginEnv === "*" ? true : (origin, callback) => {
+      callback(null, isOriginAllowed(origin));
+    },
     methods: ["GET", "POST"],
     credentials: true,
   },
