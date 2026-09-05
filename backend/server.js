@@ -5,6 +5,7 @@
 // they stop sending GPS pings.
 
 const path = require("path");
+const fs = require("fs");
 require("dotenv").config({ path: path.join(__dirname, ".env") }); // Load backend/.env even if cwd is the repo root
 
 const express = require("express");
@@ -17,6 +18,14 @@ const pool = require("./db");
 // Express app + HTTP server setup
 // ---------------------------------------------------------------------------
 const app = express();
+
+// URL normalization – fix duplicate leading slashes (e.g. //api/auth/login)
+app.use((req, _res, next) => {
+  if (req.url && req.url.startsWith("//")) {
+    req.url = req.url.replace(/^\/+/, "/");
+  }
+  next();
+});
 
 // Wrap the express app in a plain Node HTTP server so Socket.io can share it
 const server = http.createServer(app);
@@ -123,13 +132,34 @@ app.use("/api/admin",     require("./routes/admin"));
 app.use("/api/chat",      require("./routes/chat"));
 
 // ---------------------------------------------------------------------------
-// Health check endpoint
+// Health check & Frontend / Root endpoints
 // ---------------------------------------------------------------------------
 // Simple endpoint so load balancers and CI pipelines can verify the server
 // is alive without hitting any database logic.
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
+
+// Serve frontend static build if it exists
+const frontendDist = path.join(__dirname, "../frontend/dist");
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+} else {
+  // If frontend is hosted on another Vercel project, provide API info on /
+  app.get("/", (_req, res) => {
+    res.json({
+      name: "TrackMyBus API Server",
+      status: "online",
+      health: "/api/health",
+      routes: "/api/routes",
+      message: "This is the backend API server. If you want to visit the web app, check your frontend deployment URL."
+    });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Stale bus checker – runs every 60 seconds

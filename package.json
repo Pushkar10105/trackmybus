@@ -9,6 +9,7 @@
     "start": "cd backend && npm start",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
+    "build": "npm run build:frontend",
     "build:frontend": "cd frontend && npm run build",
     "migrate": "cd backend && npm run migrate"
   },
