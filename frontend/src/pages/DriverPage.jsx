@@ -107,47 +107,59 @@ export default function DriverPage() {
   }, [simCoords]);
 
   // Fallback: straight-line interpolation between stops (used ONLY if the
-  // road-routing API call fails — e.g. no internet, or the free OSRM demo
-  // server is temporarily down/rate-limited). Keeps the demo working no
-  // matter what, just less realistically (bus won't hug real roads).
+  // road-routing API call fails). Uses the same STEP_DISTANCE_KM spacing
+  // as the OSRM version so bus speed looks realistic either way.
   const generateStraightLineSimCoords = useCallback((stops) => {
     if (!stops || stops.length === 0) return [];
 
     const coords = [];
-    const speedRange = [25, 50]; // random speed between these values
 
     for (let i = 0; i < stops.length; i++) {
       const stop = stops[i];
       const lat = Number(stop.lat);
       const lng = Number(stop.lng);
-      const speed = Math.floor(Math.random() * (speedRange[1] - speedRange[0])) + speedRange[0];
+      const speedVariance = (Math.random() - 0.5) * 10;
+      const speed = Math.max(5, Math.round(TARGET_SPEED_KPH + speedVariance));
 
       coords.push({
         lat,
         lng,
         speed,
         stop: stop.name,
-        dist: i < stops.length - 1 ? `~${(Math.random() * 2 + 0.3).toFixed(1)}km` : 'Terminus',
+        dist: i < stops.length - 1 ? '' : 'Terminus',
       });
 
-      // Add interpolated points between consecutive stops
+      // Add many interpolated points between consecutive stops
       if (i < stops.length - 1) {
         const nextStop = stops[i + 1];
         const nextLat = Number(nextStop.lat);
         const nextLng = Number(nextStop.lng);
-        const interpolations = 2; // 2 intermediate points
+        const segDistKm = haversineKm(lat, lng, nextLat, nextLng);
+        // Number of intermediate points to match ~25m per step
+        const interpolations = Math.max(2, Math.floor(segDistKm / STEP_DISTANCE_KM));
 
-        for (let j = 1; j <= interpolations; j++) {
-          const fraction = j / (interpolations + 1);
+        for (let j = 1; j < interpolations; j++) {
+          const fraction = j / interpolations;
+          const remainKm = segDistKm * (1 - fraction);
+          const sv = (Math.random() - 0.5) * 10;
           coords.push({
             lat: lat + (nextLat - lat) * fraction,
             lng: lng + (nextLng - lng) * fraction,
-            speed: Math.floor(Math.random() * (speedRange[1] - speedRange[0])) + speedRange[0],
+            speed: Math.max(5, Math.round(TARGET_SPEED_KPH + sv)),
             stop: `En route to ${nextStop.name}`,
-            dist: `~${(Math.random() * 1.5 + 0.2).toFixed(1)}km`,
+            dist: `~${remainKm.toFixed(1)}km`,
           });
         }
       }
+    }
+
+    // Update the first stop's dist now that we know how many points to next
+    if (coords.length > 1 && stops.length > 1) {
+      const distToNext = haversineKm(
+        Number(stops[0].lat), Number(stops[0].lng),
+        Number(stops[1].lat), Number(stops[1].lng)
+      );
+      coords[0].dist = `~${distToNext.toFixed(1)}km`;
     }
 
     return coords;
@@ -178,19 +190,69 @@ export default function DriverPage() {
     return data.routes[0].geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
   }, []);
 
-  // Turn the raw road-route points into the same {lat, lng, speed, stop,
-  // dist} shape the cockpit UI already expects, by figuring out which of
-  // the many road points sits closest to each real bus stop.
-  const buildSimCoordsFromRoute = useCallback((routePoints, stops) => {
-    const speedRange = [25, 50];
+  // ---------------------------------------------------------------------------
+  // Resample OSRM road points at uniform distance intervals so each 3-second
+  // simulation tick moves the bus a consistent, realistic distance along the
+  // road. Without resampling, OSRM points are dense on curves and sparse on
+  // straights — the bus would visually speed up and slow down erratically.
+  //
+  // TARGET_SPEED_KPH ÷ 3600 × TICK_INTERVAL_S × 1000 = metres per tick.
+  //   30 kph → ~25 m every 3 s. That looks natural for a city bus.
+  // ---------------------------------------------------------------------------
+  const TARGET_SPEED_KPH = 30;
+  const TICK_INTERVAL_S = 3;
+  const STEP_DISTANCE_KM = (TARGET_SPEED_KPH / 3600) * TICK_INTERVAL_S; // ~0.025 km
 
-    // For each real stop, find the index of the closest point on the road
-    // path — this tells us roughly where along the (much longer) list of
-    // road points each actual stop falls.
-    const stopPointIndices = stops.map((stop) => {
+  const buildSimCoordsFromRoute = useCallback((routePoints, stops) => {
+    if (!routePoints || routePoints.length < 2) return [];
+
+    // 1. Compute cumulative distance along the raw OSRM path
+    const cumDist = [0]; // cumDist[i] = km from routePoints[0] to routePoints[i]
+    for (let i = 1; i < routePoints.length; i++) {
+      cumDist.push(
+        cumDist[i - 1] +
+          haversineKm(
+            routePoints[i - 1].lat,
+            routePoints[i - 1].lng,
+            routePoints[i].lat,
+            routePoints[i].lng
+          )
+      );
+    }
+    const totalRouteKm = cumDist[cumDist.length - 1];
+
+    // 2. Resample: walk along the route at fixed STEP_DISTANCE_KM intervals,
+    //    linearly interpolating between the two nearest raw points.
+    const resampled = [{ lat: routePoints[0].lat, lng: routePoints[0].lng }];
+    let targetKm = STEP_DISTANCE_KM;
+    let rawIdx = 0;
+
+    while (targetKm < totalRouteKm) {
+      // Advance rawIdx until cumDist[rawIdx+1] >= targetKm
+      while (rawIdx < routePoints.length - 2 && cumDist[rawIdx + 1] < targetKm) {
+        rawIdx++;
+      }
+      const segLen = cumDist[rawIdx + 1] - cumDist[rawIdx];
+      const frac = segLen > 0 ? (targetKm - cumDist[rawIdx]) / segLen : 0;
+      const a = routePoints[rawIdx];
+      const b = routePoints[rawIdx + 1];
+
+      resampled.push({
+        lat: a.lat + (b.lat - a.lat) * frac,
+        lng: a.lng + (b.lng - a.lng) * frac,
+      });
+      targetKm += STEP_DISTANCE_KM;
+    }
+
+    // Always include the final point (terminus)
+    const lastPt = routePoints[routePoints.length - 1];
+    resampled.push({ lat: lastPt.lat, lng: lastPt.lng });
+
+    // 3. For each real stop, find the closest resampled point index
+    const stopResampledIndices = stops.map((stop) => {
       let bestIdx = 0;
       let bestDist = Infinity;
-      routePoints.forEach((pt, idx) => {
+      resampled.forEach((pt, idx) => {
         const d = haversineKm(Number(stop.lat), Number(stop.lng), pt.lat, pt.lng);
         if (d < bestDist) {
           bestDist = d;
@@ -200,36 +262,32 @@ export default function DriverPage() {
       return bestIdx;
     });
 
-    return routePoints.map((pt, idx) => {
-      // Is this exact road point essentially one of our real stops?
-      const matchedStopIdx = stopPointIndices.indexOf(idx);
+    // 4. Build the final sim coords array with realistic speed + stop labels
+    return resampled.map((pt, idx) => {
+      const matchedStopIdx = stopResampledIndices.indexOf(idx);
       const isRealStop = matchedStopIdx !== -1;
 
       // Which stop is this point heading toward next?
-      const nextStopPointIdx =
-        stopPointIndices.find((si) => si >= idx) ??
-        stopPointIndices[stopPointIndices.length - 1];
-      const nextStopIdx = stopPointIndices.indexOf(nextStopPointIdx);
+      const nextStopResIdx =
+        stopResampledIndices.find((si) => si >= idx) ??
+        stopResampledIndices[stopResampledIndices.length - 1];
+      const nextStopIdx = stopResampledIndices.indexOf(nextStopResIdx);
       const nextStopName = stops[nextStopIdx]?.name || stops[stops.length - 1].name;
 
-      // Rough remaining distance to that next stop, summed along the
-      // actual road points — far more accurate than a straight-line guess.
-      let distKm = 0;
-      for (let i = idx; i < nextStopPointIdx; i++) {
-        distKm += haversineKm(
-          routePoints[i].lat,
-          routePoints[i].lng,
-          routePoints[i + 1].lat,
-          routePoints[i + 1].lng
-        );
-      }
+      // Remaining distance to next stop (count of resampled steps × step distance)
+      const stepsToNextStop = Math.max(0, nextStopResIdx - idx);
+      const distKm = stepsToNextStop * STEP_DISTANCE_KM;
+
+      // Add a small realistic variance to the speed (±5 kph)
+      const speedVariance = (Math.random() - 0.5) * 10;
+      const speed = Math.max(5, Math.round(TARGET_SPEED_KPH + speedVariance));
 
       return {
         lat: pt.lat,
         lng: pt.lng,
-        speed: Math.floor(Math.random() * (speedRange[1] - speedRange[0])) + speedRange[0],
+        speed,
         stop: isRealStop ? stops[matchedStopIdx].name : `En route to ${nextStopName}`,
-        dist: idx === nextStopPointIdx ? 'Terminus' : `~${distKm.toFixed(1)}km`,
+        dist: idx >= resampled.length - 1 ? 'Terminus' : `~${distKm.toFixed(1)}km`,
       };
     });
   }, []);
