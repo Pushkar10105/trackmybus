@@ -28,6 +28,31 @@ import {
   User
 } from 'lucide-react';
 
+// ---------------------------------------------------------------------------
+// ROAD ROUTING HELPERS (module-level — don't depend on component state, so
+// they're defined once here instead of being recreated every render)
+// ---------------------------------------------------------------------------
+
+// Free, no-API-key-needed public routing service. Good for a hackathon demo;
+// if you ever move this to real production, swap this for your own OSRM
+// instance or a paid provider (Google/Mapbox Directions), since the public
+// demo server can be rate-limited under heavy use.
+const OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/driving';
+
+// Straight-line distance (in km) between two lat/lng points. We only use
+// this to figure out which point on the road route is closest to a given
+// bus stop — not for the actual driving directions themselves.
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function DriverPage() {
   const { user, isAuthenticated, role, login, signup, logout } = useAuth();
 
@@ -81,9 +106,11 @@ export default function DriverPage() {
     simCoordsRef.current = simCoords;
   }, [simCoords]);
 
-  // Generate simulated coordinates from route stops.
-  // Interpolates between stops to create more intermediate points for smoother movement.
-  const generateSimCoords = useCallback((stops) => {
+  // Fallback: straight-line interpolation between stops (used ONLY if the
+  // road-routing API call fails — e.g. no internet, or the free OSRM demo
+  // server is temporarily down/rate-limited). Keeps the demo working no
+  // matter what, just less realistically (bus won't hug real roads).
+  const generateStraightLineSimCoords = useCallback((stops) => {
     if (!stops || stops.length === 0) return [];
 
     const coords = [];
@@ -126,6 +153,87 @@ export default function DriverPage() {
     return coords;
   }, []);
 
+  // Ask a free public routing service (OSRM) for the real road path that
+  // connects our stops in order, instead of a straight line "as the crow
+  // flies". It returns lots of small points that trace actual streets.
+  const fetchRoadRouteCoords = useCallback(async (stops) => {
+    if (!stops || stops.length < 2) return null;
+
+    const coordsParam = stops
+      .map((s) => `${Number(s.lng)},${Number(s.lat)}`)
+      .join(';');
+    const url = `${OSRM_BASE_URL}/${coordsParam}?geometries=geojson&overview=full`;
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Routing service responded with status ${res.status}`);
+    }
+    const data = await res.json();
+    if (!data.routes || data.routes.length === 0) {
+      throw new Error('Routing service found no road path between these stops');
+    }
+
+    // OSRM returns points as [lng, lat] — we flip them to {lat, lng} so the
+    // rest of this file (and the map/UI) doesn't need to know the difference.
+    return data.routes[0].geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
+  }, []);
+
+  // Turn the raw road-route points into the same {lat, lng, speed, stop,
+  // dist} shape the cockpit UI already expects, by figuring out which of
+  // the many road points sits closest to each real bus stop.
+  const buildSimCoordsFromRoute = useCallback((routePoints, stops) => {
+    const speedRange = [25, 50];
+
+    // For each real stop, find the index of the closest point on the road
+    // path — this tells us roughly where along the (much longer) list of
+    // road points each actual stop falls.
+    const stopPointIndices = stops.map((stop) => {
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      routePoints.forEach((pt, idx) => {
+        const d = haversineKm(Number(stop.lat), Number(stop.lng), pt.lat, pt.lng);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = idx;
+        }
+      });
+      return bestIdx;
+    });
+
+    return routePoints.map((pt, idx) => {
+      // Is this exact road point essentially one of our real stops?
+      const matchedStopIdx = stopPointIndices.indexOf(idx);
+      const isRealStop = matchedStopIdx !== -1;
+
+      // Which stop is this point heading toward next?
+      const nextStopPointIdx =
+        stopPointIndices.find((si) => si >= idx) ??
+        stopPointIndices[stopPointIndices.length - 1];
+      const nextStopIdx = stopPointIndices.indexOf(nextStopPointIdx);
+      const nextStopName = stops[nextStopIdx]?.name || stops[stops.length - 1].name;
+
+      // Rough remaining distance to that next stop, summed along the
+      // actual road points — far more accurate than a straight-line guess.
+      let distKm = 0;
+      for (let i = idx; i < nextStopPointIdx; i++) {
+        distKm += haversineKm(
+          routePoints[i].lat,
+          routePoints[i].lng,
+          routePoints[i + 1].lat,
+          routePoints[i + 1].lng
+        );
+      }
+
+      return {
+        lat: pt.lat,
+        lng: pt.lng,
+        speed: Math.floor(Math.random() * (speedRange[1] - speedRange[0])) + speedRange[0],
+        stop: isRealStop ? stops[matchedStopIdx].name : `En route to ${nextStopName}`,
+        dist: idx === nextStopPointIdx ? 'Terminus' : `~${distKm.toFixed(1)}km`,
+      };
+    });
+  }, []);
+
   // Real-time digital clock update
   useEffect(() => {
     const updateClock = () => {
@@ -140,7 +248,9 @@ export default function DriverPage() {
     return () => clearInterval(clockInterval);
   }, []);
 
-  // Fetch driver assignment when authenticated
+  // Fetch driver assignment when authenticated, then build the simulated
+  // path — trying the real road route first, falling back to straight
+  // lines only if the routing API is unavailable.
   useEffect(() => {
     if (!isAuthenticated || role !== 'driver') return;
 
@@ -150,9 +260,25 @@ export default function DriverPage() {
       try {
         const data = await driverApi.getAssignment();
         setAssignment(data);
-        // Generate simulated coordinates from the route stops
-        if (data.stops && data.stops.length > 0) {
-          const generated = generateSimCoords(data.stops);
+
+        if (data.stops && data.stops.length > 1) {
+          let generated;
+          try {
+            const routePoints = await fetchRoadRouteCoords(data.stops);
+            generated = buildSimCoordsFromRoute(routePoints, data.stops);
+          } catch (routeErr) {
+            console.warn(
+              'Road routing unavailable, falling back to straight-line simulation:',
+              routeErr
+            );
+            generated = generateStraightLineSimCoords(data.stops);
+          }
+          setSimCoords(generated);
+          simCoordsRef.current = generated;
+        } else if (data.stops && data.stops.length === 1) {
+          // Only one stop — nothing to route between, straight-line
+          // fallback handles this trivially (single point).
+          const generated = generateStraightLineSimCoords(data.stops);
           setSimCoords(generated);
           simCoordsRef.current = generated;
         }
@@ -165,7 +291,13 @@ export default function DriverPage() {
     }
 
     fetchAssignment();
-  }, [isAuthenticated, role, generateSimCoords]);
+  }, [
+    isAuthenticated,
+    role,
+    fetchRoadRouteCoords,
+    buildSimCoordsFromRoute,
+    generateStraightLineSimCoords,
+  ]);
 
   // Trip Chronometer
   useEffect(() => {
