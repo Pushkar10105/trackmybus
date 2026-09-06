@@ -57,10 +57,11 @@ export default function DriverPage() {
   const [tripStarting, setTripStarting] = useState(false);
 
   // Simulation mode
+  const [simCoords, setSimCoords] = useState([]);
+  const simCoordsRef = useRef([]);
   const intervalRef = useRef(null);
   const timerRef = useRef(null);
   const simulationStepRef = useRef(0);
-  const simCoordsRef = useRef([]);
 
   // Keep ref up to date with simCoords to prevent stale closures in setInterval
   useEffect(() => {
@@ -111,8 +112,6 @@ export default function DriverPage() {
 
     return coords;
   }, []);
-
-  const [simCoords, setSimCoords] = useState([]);
 
   // Real-time digital clock update
   useEffect(() => {
