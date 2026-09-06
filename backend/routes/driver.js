@@ -1,4 +1,4 @@
-﻿// routes/driver.js
+// routes/driver.js
 // Endpoints available only to authenticated drivers.
 // Handles trip lifecycle and periodic GPS location updates.
 
@@ -12,13 +12,26 @@ const router = express.Router();
 // All driver routes require a valid JWT with role="driver"
 router.use(requireAuth("driver"));
 
+// Helper to resolve the driver's bus_id from JWT payload or DB query
+async function resolveBusId(user) {
+  if (user && user.bus_id) return user.bus_id;
+  if (user && user.user_id) {
+    const res = await pool.query(
+      "SELECT id FROM buses WHERE driver_id = $1 LIMIT 1",
+      [user.user_id]
+    );
+    if (res.rows.length > 0) return res.rows[0].id;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/driver/trip/start
 // ---------------------------------------------------------------------------
 // Creates a new trip record for the bus assigned to this driver and marks
 // the bus as 'active'.
 //
-// The driver must have a bus_id in their JWT (set at login time).
+// The driver must have a bus_id in their JWT (set at login time) or assigned in DB.
 // If the bus already has an open trip we return it instead of creating
 // a duplicate (idempotent behaviour).
 //
@@ -26,7 +39,7 @@ router.use(requireAuth("driver"));
 // ---------------------------------------------------------------------------
 router.post("/trip/start", async (req, res) => {
   try {
-    const { bus_id } = req.user; // from the verified JWT
+    const bus_id = await resolveBusId(req.user);
 
     if (!bus_id) {
       return res.status(400).json({ error: "No bus assigned to this driver" });
@@ -72,7 +85,7 @@ router.post("/trip/start", async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post("/trip/end", async (req, res) => {
   try {
-    const { bus_id } = req.user;
+    const bus_id = await resolveBusId(req.user);
 
     if (!bus_id) {
       return res.status(400).json({ error: "No bus assigned to this driver" });
@@ -129,11 +142,16 @@ router.post("/trip/end", async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post("/location", async (req, res) => {
   try {
-    const { bus_id: tokenBusId } = req.user;
-    const { bus_id, lat, lng, speed, timestamp } = req.body;
+    const assignedBusId = await resolveBusId(req.user);
+    let { bus_id, lat, lng, speed, timestamp } = req.body;
+
+    // Fallback to assigned bus if not passed
+    if (!bus_id && assignedBusId) {
+      bus_id = assignedBusId;
+    }
 
     // Security check: driver can only update their own bus
-    if (Number(bus_id) !== Number(tokenBusId)) {
+    if (Number(bus_id) !== Number(assignedBusId)) {
       return res.status(403).json({ error: "bus_id does not match your assigned bus" });
     }
 
@@ -221,6 +239,69 @@ router.post("/location", async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.error("location error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/driver/assignment
+// ---------------------------------------------------------------------------
+// Returns the full assignment for the authenticated driver:
+// bus details, route details, and the ordered list of stops on their route.
+// Used by the frontend to display dynamic route/bus info and to generate
+// simulated GPS coordinates along the actual assigned route.
+//
+// Response: { bus_id, bus_number, route_id, route_name, start_point,
+//             end_point, stops: [{ id, name, lat, lng, sequence_number }] }
+// ---------------------------------------------------------------------------
+router.get("/assignment", async (req, res) => {
+  try {
+    const bus_id = await resolveBusId(req.user);
+
+    if (!bus_id) {
+      return res.status(404).json({ error: "No bus assigned to this driver" });
+    }
+
+    // Fetch bus + route details in a single query
+    const busResult = await pool.query(
+      `SELECT b.id AS bus_id, b.bus_number, b.route_id,
+              r.name AS route_name, r.start_point, r.end_point
+       FROM buses b
+       LEFT JOIN routes r ON b.route_id = r.id
+       WHERE b.id = $1`,
+      [bus_id]
+    );
+
+    if (busResult.rows.length === 0) {
+      return res.status(404).json({ error: "Assigned bus not found" });
+    }
+
+    const assignment = busResult.rows[0];
+
+    // Fetch route stops in order
+    let stops = [];
+    if (assignment.route_id) {
+      const stopsResult = await pool.query(
+        `SELECT id, name, lat, lng, sequence_number
+         FROM stops
+         WHERE route_id = $1
+         ORDER BY sequence_number ASC`,
+        [assignment.route_id]
+      );
+      stops = stopsResult.rows;
+    }
+
+    return res.json({
+      bus_id: assignment.bus_id,
+      bus_number: assignment.bus_number,
+      route_id: assignment.route_id,
+      route_name: assignment.route_name,
+      start_point: assignment.start_point,
+      end_point: assignment.end_point,
+      stops,
+    });
+  } catch (err) {
+    console.error("assignment error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

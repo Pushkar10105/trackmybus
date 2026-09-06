@@ -1,5 +1,5 @@
 // src/pages/DriverPage.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { driverApi } from '../api/endpoints';
 import {
@@ -23,7 +23,8 @@ import {
   ArrowRight,
   Power,
   ShieldCheck,
-  Smartphone
+  Smartphone,
+  Loader2
 } from 'lucide-react';
 
 export default function DriverPage() {
@@ -39,30 +40,79 @@ export default function DriverPage() {
   // Digital clock
   const [clockTime, setClockTime] = useState('');
 
+  // Assignment state (fetched from backend)
+  const [assignment, setAssignment] = useState(null);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentError, setAssignmentError] = useState('');
+
   // Trip and Tracking State
   const [tripActive, setTripActive] = useState(false);
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [pingCount, setPingCount] = useState(0);
   const [pingFlash, setPingFlash] = useState(false);
-  const [currentSpeed, setCurrentSpeed] = useState(38);
+  const [currentSpeed, setCurrentSpeed] = useState(0);
+
+  // Safety confirmation modal
   const [safetyModalOpen, setSafetyModalOpen] = useState(false);
+  const [tripStarting, setTripStarting] = useState(false);
 
   // Simulation mode
   const intervalRef = useRef(null);
   const timerRef = useRef(null);
   const simulationStepRef = useRef(0);
+  const simCoordsRef = useRef([]);
 
-  // Simulated GPS track coordinates in Hyderabad
-  const SIMULATED_COORDS = [
-    { lat: 17.3850, lng: 78.4867, speed: 28, stop: 'Abids GPO', dist: '~800m' },
-    { lat: 17.3940, lng: 78.4770, speed: 36, stop: 'Nampally Station', dist: '~1.2km' },
-    { lat: 17.3995, lng: 78.4680, speed: 42, stop: 'Lakdikapool', dist: '~650m' },
-    { lat: 17.4060, lng: 78.4590, speed: 34, stop: 'Khairatabad Circle', dist: '~500m' },
-    { lat: 17.4140, lng: 78.4520, speed: 44, stop: 'Punjagutta Metro', dist: '~400m' },
-    { lat: 17.4260, lng: 78.4480, speed: 32, stop: 'Ameerpet Junction', dist: '~350m' },
-    { lat: 17.4375, lng: 78.4482, speed: 48, stop: 'Madhapur / Hitec City', dist: '~2.1km' },
-    { lat: 17.4480, lng: 78.3900, speed: 40, stop: 'Kondapur Bus Depot', dist: '~1.4km' },
-  ];
+  // Keep ref up to date with simCoords to prevent stale closures in setInterval
+  useEffect(() => {
+    simCoordsRef.current = simCoords;
+  }, [simCoords]);
+
+  // Generate simulated coordinates from route stops.
+  // Interpolates between stops to create more intermediate points for smoother movement.
+  const generateSimCoords = useCallback((stops) => {
+    if (!stops || stops.length === 0) return [];
+
+    const coords = [];
+    const speedRange = [25, 50]; // random speed between these values
+
+    for (let i = 0; i < stops.length; i++) {
+      const stop = stops[i];
+      const lat = Number(stop.lat);
+      const lng = Number(stop.lng);
+      const speed = Math.floor(Math.random() * (speedRange[1] - speedRange[0])) + speedRange[0];
+
+      coords.push({
+        lat,
+        lng,
+        speed,
+        stop: stop.name,
+        dist: i < stops.length - 1 ? `~${(Math.random() * 2 + 0.3).toFixed(1)}km` : 'Terminus',
+      });
+
+      // Add interpolated points between consecutive stops
+      if (i < stops.length - 1) {
+        const nextStop = stops[i + 1];
+        const nextLat = Number(nextStop.lat);
+        const nextLng = Number(nextStop.lng);
+        const interpolations = 2; // 2 intermediate points
+
+        for (let j = 1; j <= interpolations; j++) {
+          const fraction = j / (interpolations + 1);
+          coords.push({
+            lat: lat + (nextLat - lat) * fraction,
+            lng: lng + (nextLng - lng) * fraction,
+            speed: Math.floor(Math.random() * (speedRange[1] - speedRange[0])) + speedRange[0],
+            stop: `En route to ${nextStop.name}`,
+            dist: `~${(Math.random() * 1.5 + 0.2).toFixed(1)}km`,
+          });
+        }
+      }
+    }
+
+    return coords;
+  }, []);
+
+  const [simCoords, setSimCoords] = useState([]);
 
   // Real-time digital clock update
   useEffect(() => {
@@ -77,6 +127,33 @@ export default function DriverPage() {
     const clockInterval = setInterval(updateClock, 1000);
     return () => clearInterval(clockInterval);
   }, []);
+
+  // Fetch driver assignment when authenticated
+  useEffect(() => {
+    if (!isAuthenticated || role !== 'driver') return;
+
+    async function fetchAssignment() {
+      setAssignmentLoading(true);
+      setAssignmentError('');
+      try {
+        const data = await driverApi.getAssignment();
+        setAssignment(data);
+        // Generate simulated coordinates from the route stops
+        if (data.stops && data.stops.length > 0) {
+          const generated = generateSimCoords(data.stops);
+          setSimCoords(generated);
+          simCoordsRef.current = generated;
+        }
+      } catch (err) {
+        console.error('Failed to fetch assignment:', err);
+        setAssignmentError(err?.message || 'Failed to load assignment');
+      } finally {
+        setAssignmentLoading(false);
+      }
+    }
+
+    fetchAssignment();
+  }, [isAuthenticated, role, generateSimCoords]);
 
   // Trip Chronometer
   useEffect(() => {
@@ -127,17 +204,41 @@ export default function DriverPage() {
 
   // Start Trip Broadcast
   const handleStartTrip = async () => {
+    if (!assignment || tripStarting) return;
+
+    setTripStarting(true);
     try {
       await driverApi.startTrip();
       setTripActive(true);
       setSecondsElapsed(0);
       setPingCount(1);
+      simulationStepRef.current = 0;
+
+      const coords = simCoordsRef.current;
+      // Set initial speed and send immediate first ping
+      if (coords && coords.length > 0) {
+        setCurrentSpeed(coords[0].speed);
+        try {
+          await driverApi.sendLocation({
+            bus_id: assignment.bus_id,
+            lat: coords[0].lat,
+            lng: coords[0].lng,
+            speed: coords[0].speed,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (pingErr) {
+          console.warn('Initial telemetry ping notice:', pingErr);
+        }
+      }
 
       // Begin broadcast simulation loop every 3 seconds
       intervalRef.current = setInterval(async () => {
-        const step = simulationStepRef.current % SIMULATED_COORDS.length;
-        const currentCoord = SIMULATED_COORDS[step];
+        const activeCoords = simCoordsRef.current;
+        if (!activeCoords || activeCoords.length === 0) return;
+
         simulationStepRef.current += 1;
+        const step = simulationStepRef.current % activeCoords.length;
+        const currentCoord = activeCoords[step];
 
         setCurrentSpeed(currentCoord.speed);
 
@@ -147,7 +248,7 @@ export default function DriverPage() {
 
         try {
           await driverApi.sendLocation({
-            bus_id: user?.bus_id || 1,
+            bus_id: assignment.bus_id,
             lat: currentCoord.lat,
             lng: currentCoord.lng,
             speed: currentCoord.speed,
@@ -160,6 +261,8 @@ export default function DriverPage() {
       }, 3000);
     } catch (err) {
       console.error('Failed to start trip:', err);
+    } finally {
+      setTripStarting(false);
     }
   };
 
@@ -174,11 +277,20 @@ export default function DriverPage() {
     }
     setTripActive(false);
     setSafetyModalOpen(false);
+    setCurrentSpeed(0);
   };
 
-  // Current coordinate slice
-  const activePointIndex = simulationStepRef.current % SIMULATED_COORDS.length;
-  const currentCoordinate = SIMULATED_COORDS[activePointIndex] || SIMULATED_COORDS[0];
+  // Current coordinate slice (for display during trip)
+  const activePointIndex = simCoords.length > 0
+    ? simulationStepRef.current % simCoords.length
+    : 0;
+  const currentCoordinate = simCoords[activePointIndex] || { lat: 0, lng: 0, speed: 0, stop: '—', dist: '—' };
+
+  // Derived display values from assignment
+  const displayBusNumber = assignment?.bus_number || user?.bus_number || '—';
+  const displayRouteName = assignment?.route_name || user?.route_name || '—';
+  const displayStartPoint = assignment?.start_point || '—';
+  const displayEndPoint = assignment?.end_point || '—';
 
   // ---------------------------------------------------------------------------
   // STATE 1: Unauthenticated Driver Terminal Login
@@ -264,13 +376,11 @@ export default function DriverPage() {
               </div>
             )}
 
-            {/* Auth Form */}
-            <form className="flex flex-col gap-4" onSubmit={handleLogin}>
-              {/* Phone Input */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-ink uppercase tracking-wider flex items-center justify-between">
-                  <span>Mobile Number</span>
-                  <span className="text-body-muted font-normal text-[10px]">Registered SIM Only</span>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                  <span>Duty Phone Number</span>
+                  <span className="text-body-muted font-normal text-[10px]">Registered Mobile</span>
                 </label>
                 <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
                   <Phone className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
@@ -278,18 +388,16 @@ export default function DriverPage() {
                     type="tel"
                     value={phoneInput}
                     onChange={(e) => setPhoneInput(e.target.value)}
-                    placeholder="+91 90000 00002"
+                    placeholder="9000000002"
                     required
                     className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-medium"
                   />
-                  <CheckCircle className="w-4 h-4 text-emerald-600 ml-2 flex-shrink-0" />
                 </div>
               </div>
 
-              {/* PIN Input */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-ink uppercase tracking-wider flex items-center justify-between">
-                  <span>Terminal PIN</span>
+              <div>
+                <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                  <span>Driver PIN / Password</span>
                   <span className="text-body-muted font-normal text-[10px]">Access Key</span>
                 </label>
                 <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
@@ -316,18 +424,61 @@ export default function DriverPage() {
               <button
                 type="submit"
                 disabled={loginLoading}
-                className="w-full mt-2 bg-primary text-white rounded-full py-3.5 px-6 font-semibold text-sm tracking-wide flex items-center justify-center gap-2 hover:bg-black-elevated active:scale-95 transition-all shadow-md disabled:opacity-50"
+                className="w-full mt-2 bg-primary text-white rounded-full py-3.5 px-6 font-semibold text-sm tracking-wide flex items-center justify-center gap-2 hover:bg-black-elevated active:scale-95 transition-all shadow-md disabled:opacity-50 cursor-pointer"
               >
                 <span>{loginLoading ? 'Authenticating...' : 'Sign In to Terminal'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
 
-            {/* Hint */}
-            <div className="flex items-center justify-center gap-2 pt-1 text-center">
-              <span className="text-[11px] text-body-muted">
-                Forgot PIN? Report to Koti Central Depot Master or Dial 144
+            {/* Quick Driver Profile Preset Selector */}
+            <div className="pt-2 border-t border-black/5">
+              <span className="text-[10px] text-body-muted uppercase font-bold tracking-wider block mb-2">
+                Quick Driver Select (Demo)
               </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneInput('9000000002');
+                    setPasswordInput('password123');
+                  }}
+                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                >
+                  <div className="font-bold text-ink">Ramesh Kumar</div>
+                  <div className="text-[10px] text-body-muted">Bus PB-08-7776 • Rt 21</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneInput('9998887776');
+                  }}
+                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                >
+                  <div className="font-bold text-ink">Rahul Das</div>
+                  <div className="text-[10px] text-body-muted">Bus PB-08-1234 • Rt 18</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneInput('9998887777');
+                  }}
+                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                >
+                  <div className="font-bold text-ink">Mohit Sahu</div>
+                  <div className="text-[10px] text-body-muted">Bus PB-08-7777 • Rt 11</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneInput('9998887775');
+                  }}
+                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                >
+                  <div className="font-bold text-ink">Hemant devi</div>
+                  <div className="text-[10px] text-body-muted">Bus PB-08-9076 • Rt 15</div>
+                </button>
+              </div>
             </div>
           </section>
 
@@ -364,9 +515,9 @@ export default function DriverPage() {
               <span className="w-1.5 h-1.5 rounded-full bg-body-muted"></span>
               <span>Terminal ID: HYD-RTC-POS-041</span>
               <span>•</span>
-              <span>Depot: Koti Central Depot</span>
+              <span>Depot: Central Depot</span>
             </div>
-            <span>Telangana State Road Transport Corporation • Cockpit v4.12</span>
+            <span>State Road Transport Corporation • Cockpit v4.12</span>
           </footer>
         </div>
       </div>
@@ -374,83 +525,137 @@ export default function DriverPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // STATE 2: Authenticated Driver - Start Trip Prompt or Active Trip State
+  // STATE 2: Loading Assignment
+  // ---------------------------------------------------------------------------
+  if (assignmentLoading) {
+    return (
+      <div className="flex-1 w-full h-full overflow-y-auto bg-surface flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          <p className="text-sm text-body-muted font-medium">Loading assignment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // STATE 3: Assignment Error (no bus assigned, etc.)
+  // ---------------------------------------------------------------------------
+  if (assignmentError || !assignment) {
+    return (
+      <div className="flex-1 w-full h-full overflow-y-auto bg-surface flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md bg-canvas rounded-2xl p-6 shadow-xl border border-black/10 flex flex-col items-center gap-4 text-center">
+          <div className="w-14 h-14 rounded-full bg-canvas-soft flex items-center justify-center">
+            <AlertTriangle className="w-7 h-7 text-body-muted" />
+          </div>
+          <h2 className="font-display font-bold text-lg text-ink">No Assignment Found</h2>
+          <p className="text-xs text-body-muted leading-relaxed">
+            {assignmentError || 'No bus or route has been assigned to your account. Please contact the depot administrator.'}
+          </p>
+          <button
+            type="button"
+            onClick={logout}
+            className="mt-2 px-6 py-2.5 bg-primary text-white rounded-full text-xs font-semibold hover:bg-black-elevated active:scale-95 transition-all cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ---------------------------------------------------------------------------
   return (
-    <div className="flex-1 bg-surface flex flex-col items-center p-4 py-6 select-none max-w-xl mx-auto w-full space-y-4">
-      {/* Driver Cockpit Header */}
-      <header className="flex items-center justify-between w-full bg-canvas rounded-2xl p-3.5 px-4 shadow-xs border border-black/10">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xs">
-            HYD
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="font-display font-bold text-sm text-ink">Cockpit Console</span>
-            <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${tripActive ? 'bg-emerald-500 animate-pulse' : 'bg-mute'}`}></span>
-              <span className="text-[10px] text-body-muted uppercase tracking-wider font-semibold">
-                Bus TS09-UB101 • {tripActive ? 'LIVE' : 'STANDBY'}
-              </span>
+    <div className="flex-1 w-full h-full overflow-y-auto bg-surface p-4 py-6">
+      <div className="max-w-xl mx-auto w-full space-y-4 flex flex-col items-center">
+        {/* Driver Cockpit Header */}
+        <header className="flex items-center justify-between w-full bg-canvas rounded-2xl p-3.5 px-4 shadow-xs border border-black/10">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xs">
+              RTC
             </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="font-mono text-sm font-bold text-ink">{clockTime}</div>
-          <button
-            onClick={logout}
-            className="icon-btn px-3 py-1 bg-canvas-soft hover:bg-surface-pressed text-xs font-semibold rounded-full"
-            title="Sign out"
-          >
-            Exit
-          </button>
-        </div>
-      </header>
-
-      {!tripActive ? (
-        /* Standby / Initiate Trip Screen */
-        <div className="w-full bg-canvas rounded-2xl p-6 shadow-uber-dock border border-black/10 flex flex-col gap-6 text-center">
-          <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center mx-auto shadow-md">
-            <Play className="w-8 h-8 ml-1 text-white" />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <h2 className="font-display font-bold text-xl text-ink">Assigned Route: Route 127K</h2>
-            <p className="text-xs text-body-muted max-w-sm mx-auto leading-relaxed">
-              Koti Bus Station ➔ Kondapur Bus Depot. Press Start Trip below to initiate GNSS telemetry broadcast to commuter maps.
-            </p>
-          </div>
-
-          <div className="bg-canvas-soft rounded-xl p-3.5 flex items-center justify-around text-xs text-body">
-            <div>
-              <span className="text-[10px] text-body-muted uppercase block font-bold">Vehicle</span>
-              <span className="font-mono font-bold text-ink">TS09-UB101</span>
-            </div>
-            <div className="h-6 w-px bg-black/10"></div>
-            <div>
-              <span className="text-[10px] text-body-muted uppercase block font-bold">Depot</span>
-              <span className="font-bold text-ink">Koti Central</span>
-            </div>
-            <div className="h-6 w-px bg-black/10"></div>
-            <div>
-              <span className="text-[10px] text-body-muted uppercase block font-bold">Telemetry</span>
-              <span className="font-bold text-emerald-600">RTK Armed</span>
+            <div className="flex flex-col leading-tight">
+              <span className="font-display font-bold text-sm text-ink">Cockpit Console</span>
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${tripActive ? 'bg-emerald-500 animate-pulse' : 'bg-mute'}`}></span>
+                <span className="text-[10px] text-body-muted uppercase tracking-wider font-semibold">
+                  Bus {displayBusNumber} • {tripActive ? 'LIVE' : 'STANDBY'}
+                </span>
+              </div>
             </div>
           </div>
 
-          <button
-            onClick={handleStartTrip}
-            className="w-full h-14 rounded-full bg-primary hover:bg-black-elevated text-white font-bold text-sm tracking-wide uppercase flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"
-          >
-            <Play className="w-5 h-5 fill-current" />
-            <span>START TRIP BROADCAST</span>
-          </button>
-        </div>
-      ) : (
-        /* Active Trip Cockpit Console */
-        <div className="w-full flex flex-col gap-3.5">
-          {/* Top Status Banner */}
-          <div className="bg-primary text-white rounded-2xl p-4 shadow-md flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <div className="font-mono text-sm font-bold text-ink">{clockTime}</div>
+            <button
+              type="button"
+              onClick={logout}
+              className="icon-btn px-3 py-1 bg-canvas-soft hover:bg-surface-pressed text-xs font-semibold rounded-full cursor-pointer"
+              title="Sign out"
+            >
+              Exit
+            </button>
+          </div>
+        </header>
+
+        {!tripActive ? (
+          /* Standby / Initiate Trip Screen */
+          <div className="w-full bg-canvas rounded-2xl p-6 shadow-uber-dock border border-black/10 flex flex-col gap-6 text-center">
+            <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center mx-auto shadow-md">
+              <Play className="w-8 h-8 ml-1 text-white" />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <h2 className="font-display font-bold text-xl text-ink">
+                Assigned Route: {displayRouteName}
+              </h2>
+              <p className="text-xs text-body-muted max-w-sm mx-auto leading-relaxed">
+                {displayStartPoint} ➔ {displayEndPoint}. Press Start Trip below to initiate GNSS telemetry broadcast to commuter maps.
+              </p>
+            </div>
+
+            <div className="bg-canvas-soft rounded-xl p-3.5 flex items-center justify-around text-xs text-body">
+              <div>
+                <span className="text-[10px] text-body-muted uppercase block font-bold">Vehicle</span>
+                <span className="font-mono font-bold text-ink">{displayBusNumber}</span>
+              </div>
+              <div className="h-6 w-px bg-black/10"></div>
+              <div>
+                <span className="text-[10px] text-body-muted uppercase block font-bold">Stops</span>
+                <span className="font-bold text-ink">{assignment.stops?.length || 0} Stops</span>
+              </div>
+              <div className="h-6 w-px bg-black/10"></div>
+              <div>
+                <span className="text-[10px] text-body-muted uppercase block font-bold">Telemetry</span>
+                <span className="font-bold text-emerald-600">RTK Armed</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              id="start-trip-btn"
+              onClick={handleStartTrip}
+              disabled={tripStarting || !assignment}
+              className="w-full h-14 rounded-full bg-primary hover:bg-black-elevated text-white font-bold text-sm tracking-wide uppercase flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer relative z-10 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {tripStarting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>STARTING BROADCAST...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5" />
+                  <span>START TRIP BROADCAST</span>
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          /* Active Trip Cockpit Console */
+          <div className="w-full flex flex-col gap-3.5">
+            {/* Top Status Banner */}
+            <div className="bg-primary text-white rounded-2xl p-4 shadow-md flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-2 bg-black-elevated px-3 py-1.5 rounded-full">
                 <span className="relative flex h-2.5 w-2.5 items-center justify-center">
@@ -472,7 +677,7 @@ export default function DriverPage() {
                 Assigned Transit Unit
               </span>
               <span className="font-display font-bold text-xl text-white tracking-tight">
-                Bus TS09-UB101 <span className="text-mute text-xs font-normal">(Route 127K)</span>
+                Bus {displayBusNumber} <span className="text-mute text-xs font-normal">({displayRouteName})</span>
               </span>
             </div>
 
@@ -579,7 +784,7 @@ export default function DriverPage() {
             <div className="flex items-baseline justify-between pt-1">
               <div className="flex flex-col">
                 <span className="text-xs font-bold font-mono tracking-tight text-ink">
-                  {currentCoordinate.lat}° N, {currentCoordinate.lng}° E
+                  {Number(currentCoordinate.lat).toFixed(4)}° N, {Number(currentCoordinate.lng).toFixed(4)}° E
                 </span>
                 <span className="text-[10px] text-body-muted">Hyderabad Urban Corridor</span>
               </div>
@@ -617,8 +822,9 @@ export default function DriverPage() {
           {/* END TRIP Button */}
           <div className="pt-2">
             <button
+              type="button"
               onClick={() => setSafetyModalOpen(true)}
-              className="w-full h-14 rounded-full bg-primary hover:bg-black-elevated text-white font-bold text-sm tracking-wide uppercase flex items-center justify-center gap-2.5 shadow-lg active:scale-95 transition-all"
+              className="w-full h-14 rounded-full bg-primary hover:bg-black-elevated text-white font-bold text-sm tracking-wide uppercase flex items-center justify-center gap-2.5 shadow-lg active:scale-95 transition-all cursor-pointer"
             >
               <Power className="w-5 h-5" />
               <span>END TRIP</span>
@@ -649,19 +855,21 @@ export default function DriverPage() {
 
             <div className="bg-canvas-softer rounded-xl p-3 flex flex-col gap-0.5 text-center">
               <span className="text-[10px] text-body-muted uppercase font-bold">Active Session</span>
-              <span className="text-xs font-bold text-ink">Bus TS09-UB101 • Route 127K</span>
+              <span className="text-xs font-bold text-ink">Bus {displayBusNumber} • {displayRouteName}</span>
             </div>
 
             <div className="flex flex-col gap-2 pt-2">
               <button
+                type="button"
                 onClick={handleConfirmEndTrip}
-                className="w-full h-11 rounded-full bg-primary hover:bg-black-elevated text-white font-bold text-xs uppercase tracking-wider transition-all active:scale-95 shadow-xs"
+                className="w-full h-11 rounded-full bg-primary hover:bg-black-elevated text-white font-bold text-xs uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
               >
                 Confirm End Trip
               </button>
               <button
+                type="button"
                 onClick={() => setSafetyModalOpen(false)}
-                className="w-full h-11 rounded-full bg-canvas-soft hover:bg-surface-pressed text-ink font-semibold text-xs transition-all active:scale-95"
+                className="w-full h-11 rounded-full bg-canvas-soft hover:bg-surface-pressed text-ink font-semibold text-xs transition-all active:scale-95 cursor-pointer"
               >
                 Cancel / Resume Driving
               </button>
@@ -669,6 +877,7 @@ export default function DriverPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-﻿// routes/auth.js
+// routes/auth.js
 // Handles user authentication.
 // Currently only login is supported; registration is done via the admin seeder.
 
@@ -57,15 +57,24 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // 3. Resolve bus_id for drivers (null for admin / commuter)
+    // 3. Resolve bus_id and full assignment info for drivers
     let bus_id = null;
+    let bus_number = null;
+    let route_id = null;
+    let route_name = null;
     if (user.role === "driver") {
       const busResult = await pool.query(
-        "SELECT id FROM buses WHERE driver_id = $1 LIMIT 1",
+        `SELECT b.id, b.bus_number, b.route_id, r.name AS route_name
+         FROM buses b
+         LEFT JOIN routes r ON b.route_id = r.id
+         WHERE b.driver_id = $1 LIMIT 1`,
         [user.id]
       );
       if (busResult.rows.length > 0) {
         bus_id = busResult.rows[0].id;
+        bus_number = busResult.rows[0].bus_number;
+        route_id = busResult.rows[0].route_id;
+        route_name = busResult.rows[0].route_name;
       }
     }
 
@@ -79,7 +88,16 @@ router.post("/login", async (req, res) => {
       expiresIn: "12h",
     });
 
-    return res.json({ token, role: user.role, user_id: user.id, bus_id });
+    return res.json({
+      token,
+      role: user.role,
+      user_id: user.id,
+      bus_id,
+      bus_number,
+      route_id,
+      route_name,
+      name: user.name,
+    });
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ error: "Internal server error" });

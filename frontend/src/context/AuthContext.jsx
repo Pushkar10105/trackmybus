@@ -16,11 +16,15 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       const data = await authApi.login(phone, password);
-      // data: { token, role, user_id, bus_id }
+      // data: { token, role, user_id, bus_id, bus_number, route_id, route_name, name }
       const userInfo = {
         user_id: data.user_id,
         role: data.role,
         bus_id: data.bus_id,
+        bus_number: data.bus_number || null,
+        route_id: data.route_id || null,
+        route_name: data.route_name || null,
+        name: data.name || null,
         phone,
       };
 

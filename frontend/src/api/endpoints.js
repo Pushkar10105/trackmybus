@@ -23,6 +23,7 @@ export const routesApi = {
 // Driver Operations
 // ---------------------------------------------------------------------------
 export const driverApi = {
+  getAssignment: () => api.get('/api/driver/assignment'),
   startTrip: () => api.post('/api/driver/trip/start'),
   endTrip: () => api.post('/api/driver/trip/end'),
   sendLocation: ({ bus_id, lat, lng, speed, timestamp }) =>
