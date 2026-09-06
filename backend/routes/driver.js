@@ -35,6 +35,10 @@ async function resolveBusId(user) {
 // If the bus already has an open trip we return it instead of creating
 // a duplicate (idempotent behaviour).
 //
+// Emits a global 'bus_active' Socket.io event (mirrors 'bus_inactive' in
+// trip/end) so admin dashboards and any route-scoped listeners can react
+// in real time, rather than only picking up the change on next fetch.
+//
 // Response: { trip_id }
 // ---------------------------------------------------------------------------
 router.post("/trip/start", async (req, res) => {
@@ -63,10 +67,19 @@ router.post("/trip/start", async (req, res) => {
       [bus_id]
     );
 
-    await pool.query(
-      `UPDATE buses SET status = 'active' WHERE id = $1`,
+    const busRow = await pool.query(
+      `UPDATE buses SET status = 'active' WHERE id = $1 RETURNING route_id`,
       [bus_id]
     );
+
+    const io = req.app.get("io");
+    const route_id = busRow.rows[0]?.route_id;
+    if (io) {
+      // Global broadcast: admin dashboards aren't joined to any particular
+      // route room, so they need this regardless of route_id. route_id is
+      // included in the payload so route-scoped listeners can filter client-side.
+      io.emit("bus_active", { bus_id: Number(bus_id), route_id });
+    }
 
     return res.json({ trip_id: tripResult.rows[0].id });
   } catch (err) {
@@ -104,15 +117,17 @@ router.post("/trip/end", async (req, res) => {
       return res.status(404).json({ error: "No active trip found for this bus" });
     }
 
-    // Mark the bus as inactive and tell commuters immediately
+    // Mark the bus as inactive and tell everyone immediately
     const busRow = await pool.query(
       `UPDATE buses SET status = 'inactive' WHERE id = $1 RETURNING route_id`,
       [bus_id]
     );
     const io = req.app.get("io");
     const route_id = busRow.rows[0]?.route_id;
-    if (io && route_id) {
-      io.to(`route:${route_id}`).emit("bus_inactive", { bus_id });
+    if (io) {
+      // Global broadcast (see trip/start) so admin dashboards receive this
+      // too, not just commuters subscribed to the route room.
+      io.emit("bus_inactive", { bus_id: Number(bus_id), route_id });
     }
 
     return res.json({ message: "Trip ended successfully", trip_id: result.rows[0].id });

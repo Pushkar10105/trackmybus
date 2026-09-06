@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { adminApi, issuesApi, lostFoundApi, routesApi } from '../api/endpoints';
 import Modal from '../components/Modal';
+import socket from '../socket';
 import {
   ShieldCheck,
   Bus,
@@ -138,6 +139,43 @@ export default function AdminPage() {
   useEffect(() => {
     refreshData();
   }, [isAuthenticated, role, activeTab]);
+
+  // Live fleet status updates via Socket.io — keeps Active Fleet accurate
+  // in real time instead of only reflecting whatever was true the moment
+  // the admin clicked into the tab. Scoped to auth state (not activeTab)
+  // so `buses` stays correct in the background even on other tabs.
+  useEffect(() => {
+    if (!isAuthenticated || role !== 'admin') return;
+
+    const handleBusActive = ({ bus_id }) => {
+      setBuses((prev) =>
+        prev.map((b) => (b.id === bus_id ? { ...b, status: 'active' } : b))
+      );
+    };
+
+    const handleBusInactive = ({ bus_id }) => {
+      setBuses((prev) =>
+        prev.map((b) => (b.id === bus_id ? { ...b, status: 'inactive' } : b))
+      );
+    };
+
+    socket.on('bus_active', handleBusActive);
+    socket.on('bus_inactive', handleBusInactive);
+
+    return () => {
+      socket.off('bus_active', handleBusActive);
+      socket.off('bus_inactive', handleBusInactive);
+    };
+  }, [isAuthenticated, role]);
+
+  // Polling safety net while viewing Active Fleet — cheap insurance in
+  // case a socket event is ever missed (brief disconnect, page loaded
+  // mid-reconnect, etc.)
+  useEffect(() => {
+    if (activeTab !== 'buses') return;
+    const interval = setInterval(refreshData, 10000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
 
   // Load single route details when expanded
   const toggleExpandRoute = async (routeId) => {
