@@ -36,6 +36,42 @@ async function fetchRoadRoute(stops) {
   return data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 }
 
+// Snap a GPS position onto the nearest point on a polyline path.
+// Uses perpendicular projection onto each line segment for sub-segment
+// accuracy, so the bus marker always sits exactly on the drawn route.
+function snapToRoute(lat, lng, path) {
+  if (!path || path.length < 2) return [lat, lng];
+
+  let bestDist = Infinity;
+  let bestPoint = [lat, lng];
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const [aLat, aLng] = path[i];
+    const [bLat, bLng] = path[i + 1];
+
+    // Project point onto segment a→b, clamped to [0,1]
+    const dx = bLat - aLat;
+    const dy = bLng - aLng;
+    const lenSq = dx * dx + dy * dy;
+
+    let t = 0;
+    if (lenSq > 0) {
+      t = Math.max(0, Math.min(1, ((lat - aLat) * dx + (lng - aLng) * dy) / lenSq));
+    }
+
+    const projLat = aLat + t * dx;
+    const projLng = aLng + t * dy;
+    const distSq = (lat - projLat) ** 2 + (lng - projLng) ** 2;
+
+    if (distSq < bestDist) {
+      bestDist = distSq;
+      bestPoint = [projLat, projLng];
+    }
+  }
+
+  return bestPoint;
+}
+
 // Stop marker DivIcon
 function createStopIcon(sequenceNumber, isTerminal = false) {
   const bg = isTerminal ? '#000000' : '#ffffff';
@@ -231,10 +267,16 @@ const BusMap = forwardRef(function BusMap(
         {busList.map((bus) => {
           if (!bus.lat || !bus.lng) return null;
           const isInactive = bus.status === 'inactive';
+          // Snap the bus position to the displayed road path so it never
+          // drifts off the drawn polyline (the driver simulation and this
+          // map may use different OSRM call results).
+          const snappedPos = roadPath.length > 1
+            ? snapToRoute(Number(bus.lat), Number(bus.lng), roadPath)
+            : [Number(bus.lat), Number(bus.lng)];
           return (
             <Marker
               key={`bus-${bus.bus_id || bus.bus_number}`}
-              position={[Number(bus.lat), Number(bus.lng)]}
+              position={snappedPos}
               icon={createBusIcon(bus.bus_number, bus.speed, isInactive)}
             >
               <Popup>
