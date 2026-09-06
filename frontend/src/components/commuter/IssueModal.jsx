@@ -4,12 +4,12 @@ import { issuesApi } from '../../api/endpoints';
 import { AlertCircle, X, Check, ArrowRight } from 'lucide-react';
 
 const CATEGORIES = [
-  'Broken Seat',
-  'AC Not Working',
-  'Cleanliness',
-  'Safety Concern',
-  'Rash Driving',
-  'Other',
+  { value: 'seat', label: 'Broken Seat' },
+  { value: 'ac', label: 'AC Not Working' },
+  { value: 'cleanliness', label: 'Cleanliness' },
+  { value: 'safety', label: 'Safety Concern' },
+  { value: 'driving', label: 'Rash Driving' },
+  { value: 'other', label: 'Other' },
 ];
 
 export default function IssueModal({ isOpen, onClose, defaultBusNumber = '' }) {
@@ -129,8 +129,8 @@ export default function IssueModal({ isOpen, onClose, defaultBusNumber = '' }) {
                 >
                   <option value="">Select a category</option>
                   {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
+                    <option key={cat.value} value={cat.value}>
+                      {cat.label}
                     </option>
                   ))}
                 </select>
@@ -186,7 +186,7 @@ export default function IssueModal({ isOpen, onClose, defaultBusNumber = '' }) {
             </h4>
             <p className="text-xs text-body-muted mt-1.5 max-w-xs mx-auto leading-relaxed">
               Ticket <strong className="text-ink font-mono font-bold">#{successTicket}</strong>{' '}
-              generated and dispatched to Telangana RTC central maintenance cell.
+              generated and dispatched to central transit maintenance and fleet dispatch.
             </p>
             <div className="mt-5">
               <button

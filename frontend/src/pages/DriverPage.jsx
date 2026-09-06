@@ -703,7 +703,7 @@ export default function DriverPage() {
           <footer className="flex flex-col items-center justify-center text-center gap-1 text-[10px] text-body-muted">
             <div className="inline-flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-body-muted"></span>
-              <span>Terminal ID: HYD-RTC-POS-041</span>
+              <span>Terminal ID: TRK-BUS-POS-041</span>
               <span>•</span>
               <span>Depot: Central Depot</span>
             </div>
@@ -976,7 +976,7 @@ export default function DriverPage() {
                 <span className="text-xs font-bold font-mono tracking-tight text-ink">
                   {Number(currentCoordinate.lat).toFixed(4)}° N, {Number(currentCoordinate.lng).toFixed(4)}° E
                 </span>
-                <span className="text-[10px] text-body-muted">Hyderabad Urban Corridor</span>
+                <span className="text-[10px] text-body-muted">Transit Urban Corridor</span>
               </div>
               <div className="text-right">
                 <span className="text-xs font-bold font-mono text-ink">536m</span>

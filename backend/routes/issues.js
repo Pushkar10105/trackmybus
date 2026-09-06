@@ -1,4 +1,4 @@
-﻿// routes/issues.js
+// routes/issues.js
 // Endpoints for submitting and managing commuter-reported bus issues.
 //
 // Public:  POST /api/issues           - anyone can submit a complaint
@@ -31,6 +31,22 @@ router.post("/", async (req, res) => {
         .json({ error: "bus_number, category, and description are required" });
     }
 
+    const categoryMap = {
+      "broken seat": "seat",
+      "seat": "seat",
+      "ac not working": "ac",
+      "ac": "ac",
+      "cleanliness": "cleanliness",
+      "safety concern": "safety",
+      "safety": "safety",
+      "rash driving": "driving",
+      "driving": "driving",
+      "other": "other",
+    };
+    const normalizedCategory =
+      categoryMap[String(category).trim().toLowerCase()] ||
+      String(category).trim().toLowerCase();
+
     // Resolve the bus_number string to an actual bus id
     const busResult = await pool.query(
       `SELECT id FROM buses WHERE LOWER(bus_number) = LOWER($1)`,
@@ -48,7 +64,7 @@ router.post("/", async (req, res) => {
       `INSERT INTO issue_flags (bus_id, category, description)
        VALUES ($1, $2, $3)
        RETURNING id, bus_id, category, description, created_at`,
-      [bus_id, category, description]
+      [bus_id, normalizedCategory, description]
     );
 
     return res.status(201).json(result.rows[0]);

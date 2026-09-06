@@ -262,7 +262,7 @@ export default function LostFoundModal({ isOpen, onClose, routes = [] }) {
                     </div>
                     <h5 className="font-bold text-xs text-ink mb-1">No matching items found</h5>
                     <p className="text-[11px] text-body-muted leading-relaxed">
-                      Items logged by crews or commuters on RTC routes will appear here once verified.
+                      Items logged by crews or commuters on transit routes will appear here once verified.
                     </p>
                   </div>
                 )}

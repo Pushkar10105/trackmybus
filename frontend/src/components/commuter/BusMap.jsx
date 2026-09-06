@@ -89,16 +89,30 @@ function createBusIcon(busNumber, speed = 0, isInactive = false) {
   });
 }
 
+const DEFAULT_LAT = Number(import.meta.env.VITE_DEFAULT_LAT) || 31.3260;
+const DEFAULT_LNG = Number(import.meta.env.VITE_DEFAULT_LNG) || 75.5762;
+const DEFAULT_ZOOM = Number(import.meta.env.VITE_DEFAULT_ZOOM) || 13;
+
 const BusMap = forwardRef(function BusMap(
-  { stops = [], liveBuses = {}, center = [17.4344, 78.4659], zoom = 13, recenterTrigger = 0 },
+  {
+    stops = [],
+    liveBuses = {},
+    center = [DEFAULT_LAT, DEFAULT_LNG],
+    zoom = DEFAULT_ZOOM,
+    recenterTrigger = 0,
+  },
   ref
 ) {
   const polylineCoords = stops.map((s) => [Number(s.lat), Number(s.lng)]);
   const busList = Object.values(liveBuses);
+  const initialCenter =
+    stops && stops.length > 0
+      ? [Number(stops[0].lat), Number(stops[0].lng)]
+      : center;
 
   return (
     <div className="relative w-full h-full min-h-[500px] overflow-hidden bg-canvas select-none">
-      <MapContainer center={center} zoom={zoom} scrollWheelZoom={true} className="w-full h-full">
+      <MapContainer center={initialCenter} zoom={zoom} scrollWheelZoom={true} className="w-full h-full">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

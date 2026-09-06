@@ -65,7 +65,7 @@ export default function AdminPage() {
   const [newRouteName, setNewRouteName] = useState('');
   const [newRouteStart, setNewRouteStart] = useState('');
   const [newRouteEnd, setNewRouteEnd] = useState('');
-  const [newRouteCity, setNewRouteCity] = useState('HYD');
+  const [newRouteCity, setNewRouteCity] = useState('JAL');
 
   // Add Stop Modal state
   const [addStopModalOpen, setAddStopModalOpen] = useState(false);
@@ -340,7 +340,7 @@ export default function AdminPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `RTC_Lost_Found_Ledger_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Transit_Lost_Found_Ledger_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -410,7 +410,7 @@ export default function AdminPage() {
           </form>
 
           <p className="text-[11px] text-body-muted text-center pt-2">
-            Restricted Access: Authorized Telangana RTC personnel and dispatchers only.
+            Restricted Access: Authorized transit authority personnel and dispatchers only.
           </p>
         </div>
       </div>
@@ -427,7 +427,7 @@ export default function AdminPage() {
         <div className="flex flex-col gap-6">
           <div className="px-2 flex flex-col gap-1">
             <span className="font-display font-bold text-base tracking-tight text-ink uppercase">
-              HYD-RTC
+              FLEET-OPS
             </span>
             <span className="text-[10px] text-body-muted uppercase tracking-wider font-semibold">
               Operations Terminal
@@ -471,7 +471,7 @@ export default function AdminPage() {
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
             <span className="font-bold text-xs text-ink">Depot Central</span>
-            <span className="text-[10px] text-body-muted">Sector 04 • Hyderabad</span>
+            <span className="text-[10px] text-body-muted">Central Transit Operations</span>
           </div>
 
           <button
@@ -539,7 +539,7 @@ export default function AdminPage() {
             <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-body-muted">
               <span>Metropolitan Grid Operations</span>
               <span className="w-1 h-1 rounded-full bg-black"></span>
-              <span>South-Central Zone</span>
+              <span>Regional Transit Network</span>
             </div>
             <h2 className="font-display font-bold text-lg text-ink">
               {activeTab === 'routes' && 'Route & Waypoint Topology'}
@@ -560,7 +560,7 @@ export default function AdminPage() {
               <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
                 Depot Code
               </span>
-              <span className="font-display font-bold text-sm text-ink">HYD</span>
+              <span className="font-display font-bold text-sm text-ink">{routes[0]?.city_code || 'JAL'}</span>
             </div>
             <div className="bg-primary text-white px-4 py-2 rounded-2xl flex flex-col">
               <span className="text-[10px] font-bold uppercase tracking-wider text-mute">
@@ -656,7 +656,7 @@ export default function AdminPage() {
 
                           <div className="col-span-1 text-center">
                             <span className="px-2 py-0.5 rounded-full bg-surface-pressed text-[10px] font-bold text-ink">
-                              {route.city_code || 'HYD'}
+                              {route.city_code || 'JAL'}
                             </span>
                           </div>
 
@@ -1090,7 +1090,7 @@ export default function AdminPage() {
                 type="text"
                 value={newRouteStart}
                 onChange={(e) => setNewRouteStart(e.target.value)}
-                placeholder="e.g. Koti Bus Station"
+                placeholder="e.g. Central Bus Stand"
                 required
                 className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
               />
@@ -1101,7 +1101,7 @@ export default function AdminPage() {
                 type="text"
                 value={newRouteEnd}
                 onChange={(e) => setNewRouteEnd(e.target.value)}
-                placeholder="e.g. Kondapur Bus Depot"
+                placeholder="e.g. Model Town Terminal"
                 required
                 className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
               />
@@ -1135,7 +1135,7 @@ export default function AdminPage() {
                 type="text"
                 value={newStopName}
                 onChange={(e) => setNewStopName(e.target.value)}
-                placeholder="e.g. Punjagutta Metro Gate 3"
+                placeholder="e.g. Jyoti Chowk Stop"
                 required
                 className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none"
               />
@@ -1148,7 +1148,7 @@ export default function AdminPage() {
                   step="any"
                   value={newStopLat}
                   onChange={(e) => setNewStopLat(e.target.value)}
-                  placeholder="17.4260"
+                  placeholder="31.3258"
                   required
                   className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none font-mono"
                 />
@@ -1160,7 +1160,7 @@ export default function AdminPage() {
                   step="any"
                   value={newStopLng}
                   onChange={(e) => setNewStopLng(e.target.value)}
-                  placeholder="78.4480"
+                  placeholder="75.5753"
                   required
                   className="w-full bg-canvas-soft text-xs text-ink px-3.5 py-2.5 rounded-xl border border-transparent focus:border-black focus:outline-none font-mono"
                 />
