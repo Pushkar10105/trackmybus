@@ -24,11 +24,15 @@ import {
   Power,
   ShieldCheck,
   Smartphone,
-  Loader2
+  Loader2,
+  User
 } from 'lucide-react';
 
 export default function DriverPage() {
-  const { user, isAuthenticated, role, login, logout } = useAuth();
+  const { user, isAuthenticated, role, login, signup, logout } = useAuth();
+
+  // Auth mode toggle: 'login' | 'signup'
+  const [authMode, setAuthMode] = useState('login');
 
   // Login form state
   const [phoneInput, setPhoneInput] = useState('9000000002'); // seeded driver phone
@@ -36,6 +40,15 @@ export default function DriverPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+
+  // Signup form state
+  const [signupName, setSignupName] = useState('');
+  const [signupPhone, setSignupPhone] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [signupError, setSignupError] = useState('');
+  const [signupLoading, setSignupLoading] = useState(false);
 
   // Digital clock
   const [clockTime, setClockTime] = useState('');
@@ -201,6 +214,33 @@ export default function DriverPage() {
     }
   };
 
+  // Handle Driver Signup
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setSignupError('');
+
+    if (signupPassword !== signupConfirmPassword) {
+      setSignupError('Passwords do not match');
+      return;
+    }
+    if (signupPassword.length < 6) {
+      setSignupError('Password must be at least 6 characters');
+      return;
+    }
+
+    setSignupLoading(true);
+    try {
+      const res = await signup(signupName.trim(), signupPhone.trim(), signupPassword);
+      if (!res.success) {
+        setSignupError(res.error || 'Failed to create driver account');
+      }
+    } catch (err) {
+      setSignupError(err?.message || 'Signup error');
+    } finally {
+      setSignupLoading(false);
+    }
+  };
+
   // Start Trip Broadcast
   const handleStartTrip = async () => {
     if (!assignment || tripStarting) return;
@@ -292,7 +332,7 @@ export default function DriverPage() {
   const displayEndPoint = assignment?.end_point || '—';
 
   // ---------------------------------------------------------------------------
-  // STATE 1: Unauthenticated Driver Terminal Login
+  // STATE 1: Unauthenticated Driver Terminal Login / Signup
   // ---------------------------------------------------------------------------
   if (!isAuthenticated || role !== 'driver') {
     return (
@@ -340,145 +380,296 @@ export default function DriverPage() {
               <span className="text-[11px] text-body-muted font-mono">Terminal #041</span>
             </div>
 
-            {/* Title & Description */}
-            <div className="flex flex-col gap-1">
-              <h1 className="font-display font-bold text-2xl text-ink tracking-tight">
-                Driver Login
-              </h1>
-              <p className="text-xs text-body-muted leading-relaxed">
-                Enter your registered transit mobile number and terminal PIN to access dashboard telemetry.
-              </p>
-            </div>
-
-            {/* Feedback alert banner */}
-            {loginError ? (
-              <div className="w-full rounded-xl bg-black text-white p-3.5 flex items-start gap-3 transition-all">
-                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 flex flex-col">
-                  <span className="text-xs font-bold tracking-tight">
-                    Terminal Authorization Warning
-                  </span>
-                  <span className="text-[11px] text-mute mt-0.5 leading-snug">{loginError}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="w-full rounded-xl bg-canvas-soft text-ink p-3.5 flex items-start gap-3">
-                <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 flex flex-col">
-                  <span className="text-xs font-bold tracking-tight">
-                    Terminal Ready for Pairing
-                  </span>
-                  <span className="text-[11px] text-body-muted mt-0.5 leading-snug">
-                    Depot Koti Central authenticated. Press 'Sign In' to claim shift.
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
-                  <span>Duty Phone Number</span>
-                  <span className="text-body-muted font-normal text-[10px]">Registered Mobile</span>
-                </label>
-                <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
-                  <Phone className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
-                  <input
-                    type="tel"
-                    value={phoneInput}
-                    onChange={(e) => setPhoneInput(e.target.value)}
-                    placeholder="9000000002"
-                    required
-                    className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-medium"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
-                  <span>Driver PIN / Password</span>
-                  <span className="text-body-muted font-normal text-[10px]">Access Key</span>
-                </label>
-                <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
-                  <Lock className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="••••••"
-                    required
-                    className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-mono tracking-widest"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="icon-btn p-1 text-body hover:text-ink transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Action Pill Button */}
+            {/* Mode Toggle: Sign In / Create Account */}
+            <div className="flex bg-canvas-soft rounded-xl p-1 text-xs font-bold">
               <button
-                type="submit"
-                disabled={loginLoading}
-                className="w-full mt-2 bg-primary text-white rounded-full py-3.5 px-6 font-semibold text-sm tracking-wide flex items-center justify-center gap-2 hover:bg-black-elevated active:scale-95 transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setSignupError('');
+                }}
+                className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
+                  authMode === 'login' ? 'bg-canvas shadow-xs text-ink' : 'text-body-muted'
+                }`}
               >
-                <span>{loginLoading ? 'Authenticating...' : 'Sign In to Terminal'}</span>
-                <ArrowRight className="w-4 h-4" />
+                Sign In
               </button>
-            </form>
-
-            {/* Quick Driver Profile Preset Selector */}
-            <div className="pt-2 border-t border-black/5">
-              <span className="text-[10px] text-body-muted uppercase font-bold tracking-wider block mb-2">
-                Quick Driver Select (Demo)
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneInput('9000000002');
-                    setPasswordInput('password123');
-                  }}
-                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-ink">Ramesh Kumar</div>
-                  <div className="text-[10px] text-body-muted">Bus PB-08-7776 • Rt 21</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneInput('9998887776');
-                  }}
-                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-ink">Rahul Das</div>
-                  <div className="text-[10px] text-body-muted">Bus PB-08-1234 • Rt 18</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneInput('9998887777');
-                  }}
-                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-ink">Mohit Sahu</div>
-                  <div className="text-[10px] text-body-muted">Bus PB-08-7777 • Rt 11</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneInput('9998887775');
-                  }}
-                  className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-ink">Hemant devi</div>
-                  <div className="text-[10px] text-body-muted">Bus PB-08-9076 • Rt 15</div>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('signup');
+                  setLoginError('');
+                }}
+                className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
+                  authMode === 'signup' ? 'bg-canvas shadow-xs text-ink' : 'text-body-muted'
+                }`}
+              >
+                Create Account
+              </button>
             </div>
+
+            {authMode === 'login' ? (
+              <>
+                {/* Title & Description */}
+                <div className="flex flex-col gap-1">
+                  <h1 className="font-display font-bold text-2xl text-ink tracking-tight">
+                    Driver Login
+                  </h1>
+                  <p className="text-xs text-body-muted leading-relaxed">
+                    Enter your registered transit mobile number and terminal PIN to access dashboard telemetry.
+                  </p>
+                </div>
+
+                {/* Feedback alert banner */}
+                {loginError ? (
+                  <div className="w-full rounded-xl bg-black text-white p-3.5 flex items-start gap-3 transition-all">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 flex flex-col">
+                      <span className="text-xs font-bold tracking-tight">
+                        Terminal Authorization Warning
+                      </span>
+                      <span className="text-[11px] text-mute mt-0.5 leading-snug">{loginError}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full rounded-xl bg-canvas-soft text-ink p-3.5 flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 flex flex-col">
+                      <span className="text-xs font-bold tracking-tight">
+                        Terminal Ready for Pairing
+                      </span>
+                      <span className="text-[11px] text-body-muted mt-0.5 leading-snug">
+                        Depot Koti Central authenticated. Press 'Sign In' to claim shift.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                      <span>Duty Phone Number</span>
+                      <span className="text-body-muted font-normal text-[10px]">Registered Mobile</span>
+                    </label>
+                    <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
+                      <Phone className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
+                      <input
+                        type="tel"
+                        value={phoneInput}
+                        onChange={(e) => setPhoneInput(e.target.value)}
+                        placeholder="9000000002"
+                        required
+                        className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                      <span>Driver PIN / Password</span>
+                      <span className="text-body-muted font-normal text-[10px]">Access Key</span>
+                    </label>
+                    <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
+                      <Lock className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        placeholder="••••••"
+                        required
+                        className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-mono tracking-widest"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="icon-btn p-1 text-body hover:text-ink transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Action Pill Button */}
+                  <button
+                    type="submit"
+                    disabled={loginLoading}
+                    className="w-full mt-2 bg-primary text-white rounded-full py-3.5 px-6 font-semibold text-sm tracking-wide flex items-center justify-center gap-2 hover:bg-black-elevated active:scale-95 transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                  >
+                    <span>{loginLoading ? 'Authenticating...' : 'Sign In to Terminal'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </form>
+
+                {/* Quick Driver Profile Preset Selector */}
+                <div className="pt-2 border-t border-black/5">
+                  <span className="text-[10px] text-body-muted uppercase font-bold tracking-wider block mb-2">
+                    Quick Driver Select (Demo)
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneInput('9000000002');
+                        setPasswordInput('password123');
+                      }}
+                      className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                    >
+                      <div className="font-bold text-ink">Ramesh Kumar</div>
+                      <div className="text-[10px] text-body-muted">Bus PB-08-7776 • Rt 21</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneInput('9998887776');
+                      }}
+                      className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                    >
+                      <div className="font-bold text-ink">Rahul Das</div>
+                      <div className="text-[10px] text-body-muted">Bus PB-08-1234 • Rt 18</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneInput('9998887777');
+                      }}
+                      className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                    >
+                      <div className="font-bold text-ink">Mohit Sahu</div>
+                      <div className="text-[10px] text-body-muted">Bus PB-08-7777 • Rt 11</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneInput('9998887775');
+                      }}
+                      className="text-left p-2 rounded-xl bg-canvas-soft hover:bg-surface-pressed border border-black/5 text-xs transition-colors cursor-pointer"
+                    >
+                      <div className="font-bold text-ink">Hemant devi</div>
+                      <div className="text-[10px] text-body-muted">Bus PB-08-9076 • Rt 15</div>
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Signup Title & Description */}
+                <div className="flex flex-col gap-1">
+                  <h1 className="font-display font-bold text-2xl text-ink tracking-tight">
+                    Driver Registration
+                  </h1>
+                  <p className="text-xs text-body-muted leading-relaxed">
+                    Create a new driver terminal account. An administrator will assign your bus and route afterward.
+                  </p>
+                </div>
+
+                {/* Signup feedback banner */}
+                {signupError && (
+                  <div className="w-full rounded-xl bg-black text-white p-3.5 flex items-start gap-3 transition-all">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 flex flex-col">
+                      <span className="text-xs font-bold tracking-tight">
+                        Registration Error
+                      </span>
+                      <span className="text-[11px] text-mute mt-0.5 leading-snug">{signupError}</span>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleSignup} className="space-y-4">
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                      <span>Full Name</span>
+                    </label>
+                    <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
+                      <User className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
+                      <input
+                        type="text"
+                        value={signupName}
+                        onChange={(e) => setSignupName(e.target.value)}
+                        placeholder="e.g. Priya Sharma"
+                        required
+                        className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                      <span>Phone Number</span>
+                      <span className="text-body-muted font-normal text-[10px]">Registered Mobile</span>
+                    </label>
+                    <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
+                      <Phone className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
+                      <input
+                        type="tel"
+                        value={signupPhone}
+                        onChange={(e) => setSignupPhone(e.target.value)}
+                        placeholder="e.g. 9123456789"
+                        required
+                        className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                      <span>Password</span>
+                      <span className="text-body-muted font-normal text-[10px]">Min. 6 characters</span>
+                    </label>
+                    <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
+                      <Lock className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
+                      <input
+                        type={showSignupPassword ? 'text' : 'password'}
+                        value={signupPassword}
+                        onChange={(e) => setSignupPassword(e.target.value)}
+                        placeholder="••••••"
+                        required
+                        className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-mono tracking-widest"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSignupPassword(!showSignupPassword)}
+                        className="icon-btn p-1 text-body hover:text-ink transition-colors"
+                      >
+                        {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center justify-between text-xs font-bold text-ink uppercase tracking-wider mb-1.5">
+                      <span>Confirm Password</span>
+                    </label>
+                    <div className="relative flex items-center bg-canvas-soft rounded-xl h-12 px-3.5 border border-transparent focus-within:border-black focus-within:bg-canvas transition-all">
+                      <Lock className="w-4 h-4 text-body-muted mr-2.5 flex-shrink-0" />
+                      <input
+                        type={showSignupPassword ? 'text' : 'password'}
+                        value={signupConfirmPassword}
+                        onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                        placeholder="••••••"
+                        required
+                        className="w-full bg-transparent text-sm text-ink placeholder:text-mute focus:outline-none font-mono tracking-widest"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={signupLoading}
+                    className="w-full mt-2 bg-primary text-white rounded-full py-3.5 px-6 font-semibold text-sm tracking-wide flex items-center justify-center gap-2 hover:bg-black-elevated active:scale-95 transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                  >
+                    <span>{signupLoading ? 'Creating account...' : 'Create Driver Account'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </form>
+
+                <div className="pt-2 border-t border-black/5">
+                  <p className="text-[11px] text-body-muted text-center leading-relaxed">
+                    After registering, contact your depot administrator to get assigned to a bus and route.
+                  </p>
+                </div>
+              </>
+            )}
           </section>
 
           {/* Diagnostic Strip */}

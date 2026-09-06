@@ -40,6 +40,34 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const signup = async (name, phone, password) => {
+    setLoading(true);
+    try {
+      const data = await authApi.signup(name, phone, password);
+      // data: { token, role, user_id, bus_id, bus_number, route_id, route_name, name } — same shape as login
+      const userInfo = {
+        user_id: data.user_id,
+        role: data.role,
+        bus_id: data.bus_id,
+        bus_number: data.bus_number || null,
+        route_id: data.route_id || null,
+        route_name: data.route_name || null,
+        name: data.name || null,
+        phone,
+      };
+
+      setToken(data.token);
+      setUser(userInfo);
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(userInfo));
+      return { success: true, user: userInfo };
+    } catch (err) {
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -56,6 +84,7 @@ export function AuthProvider({ children }) {
         isAuthenticated: !!token,
         loading,
         login,
+        signup,
         logout,
       }}
     >

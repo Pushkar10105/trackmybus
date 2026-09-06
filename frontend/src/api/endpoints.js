@@ -8,6 +8,7 @@ import { api } from './client';
 // ---------------------------------------------------------------------------
 export const authApi = {
   login: (phone, password) => api.post('/api/auth/login', { phone, password }),
+  signup: (name, phone, password) => api.post('/api/auth/signup', { name, phone, password }),
 };
 
 // ---------------------------------------------------------------------------
