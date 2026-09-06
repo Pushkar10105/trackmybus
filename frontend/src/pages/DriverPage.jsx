@@ -45,7 +45,6 @@ export default function DriverPage() {
   const [pingCount, setPingCount] = useState(0);
   const [pingFlash, setPingFlash] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState(38);
-  const [gpsSimState, setGpsSimState] = useState('broadcasting'); // 'broadcasting' | 'acquiring' | 'lost'
   const [safetyModalOpen, setSafetyModalOpen] = useState(false);
 
   // Simulation mode
@@ -133,7 +132,6 @@ export default function DriverPage() {
       setTripActive(true);
       setSecondsElapsed(0);
       setPingCount(1);
-      setGpsSimState('broadcasting');
 
       // Begin broadcast simulation loop every 3 seconds
       intervalRef.current = setInterval(async () => {
@@ -478,67 +476,15 @@ export default function DriverPage() {
               </span>
             </div>
 
-            {/* Signal health indicator pill */}
+            {/* Real-time telemetry signal banner */}
             <div className="flex items-center justify-between bg-black-elevated rounded-xl px-3.5 py-2.5 transition-colors">
               <div className="flex items-center gap-2.5">
-                <span
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    gpsSimState === 'broadcasting'
-                      ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                      : gpsSimState === 'acquiring'
-                      ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]'
-                      : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'
-                  }`}
-                ></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse"></span>
                 <span className="text-xs font-bold tracking-tight">
-                  {gpsSimState === 'broadcasting' && 'Broadcasting GPS (Every 3s)'}
-                  {gpsSimState === 'acquiring' && 'Acquiring GNSS Lock...'}
-                  {gpsSimState === 'lost' && 'Signal Weak / Reconnecting...'}
+                  Broadcasting GPS Telemetry (Every 3s)
                 </span>
               </div>
               <Compass className="w-4 h-4 text-mute" />
-            </div>
-
-            {/* Simulation Toggles */}
-            <div className="flex flex-col gap-1 pt-1">
-              <span className="text-[10px] text-mute uppercase tracking-wider font-semibold">
-                Simulate GPS Receiver Health
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setGpsSimState('broadcasting')}
-                  className={`py-1 px-2 rounded-full text-[10px] uppercase font-bold text-center transition-all ${
-                    gpsSimState === 'broadcasting'
-                      ? 'bg-white text-black'
-                      : 'bg-black-elevated text-mute hover:text-white'
-                  }`}
-                >
-                  🟢 Broadcast
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGpsSimState('acquiring')}
-                  className={`py-1 px-2 rounded-full text-[10px] uppercase font-bold text-center transition-all ${
-                    gpsSimState === 'acquiring'
-                      ? 'bg-white text-black'
-                      : 'bg-black-elevated text-mute hover:text-white'
-                  }`}
-                >
-                  🟡 Acquiring
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGpsSimState('lost')}
-                  className={`py-1 px-2 rounded-full text-[10px] uppercase font-bold text-center transition-all ${
-                    gpsSimState === 'lost'
-                      ? 'bg-white text-black'
-                      : 'bg-black-elevated text-mute hover:text-white'
-                  }`}
-                >
-                  🔴 Lost Signal
-                </button>
-              </div>
             </div>
           </div>
 

@@ -46,6 +46,7 @@ export default function AdminPage() {
 
   // Data states
   const [routes, setRoutes] = useState([]);
+  const [buses, setBuses] = useState([]);
   const [expandedRouteId, setExpandedRouteId] = useState(null);
   const [routeDetailsMap, setRouteDetailsMap] = useState({});
   const [issues, setIssues] = useState([]);
@@ -87,8 +88,6 @@ export default function AdminPage() {
   const [logItemPhone, setLogItemPhone] = useState('');
   const [logItemRouteId, setLogItemRouteId] = useState('');
 
-  // Telemetry inspection modal
-  const [inspectModalData, setInspectModalData] = useState(null);
 
   // Clock update
   useEffect(() => {
@@ -112,6 +111,14 @@ export default function AdminPage() {
       if (activeTab === 'routes' || activeTab === 'buses') {
         const rList = await routesApi.getAll();
         setRoutes(rList || []);
+      }
+      if (activeTab === 'buses') {
+        try {
+          const busList = await adminApi.getBuses();
+          setBuses(busList || []);
+        } catch (bErr) {
+          console.warn('Failed to load buses from adminApi:', bErr);
+        }
       }
       if (activeTab === 'issues') {
         const issueList = await issuesApi.getSummary();
@@ -764,54 +771,54 @@ export default function AdminPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {routes.flatMap((r) => r.buses || []).length > 0 ? (
-                routes.flatMap((r) =>
-                  (r.buses || []).map((bus) => (
-                    <div
-                      key={bus.id}
-                      className="p-4 rounded-2xl bg-canvas border border-black/10 shadow-xs flex flex-col justify-between gap-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-xs">
-                            <Bus className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-xs text-ink">{bus.bus_number}</h4>
-                            <span className="text-[10px] text-body-muted font-mono">
-                              Unit #{bus.id}
-                            </span>
-                          </div>
+              {buses.length > 0 ? (
+                buses.map((bus) => (
+                  <div
+                    key={bus.id}
+                    className="p-4 rounded-2xl bg-canvas border border-black/10 shadow-xs flex flex-col justify-between gap-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-xs">
+                          <Bus className="w-4 h-4" />
                         </div>
-                        <span className="px-2 py-0.5 rounded-full bg-black text-white text-[10px] font-bold">
-                          Active
-                        </span>
-                      </div>
-
-                      <div className="space-y-1 text-xs text-body pt-2 border-t border-black/5">
-                        <div className="flex justify-between">
-                          <span>Assigned Route:</span>
-                          <span className="font-bold text-ink">{bus.route_name || 'Route 127K'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Driver Phone:</span>
-                          <span className="font-mono text-ink">{bus.driver_phone || 'Unassigned'}</span>
+                        <div>
+                          <h4 className="font-bold text-xs text-ink">{bus.bus_number}</h4>
+                          <span className="text-[10px] text-body-muted font-mono">
+                            Unit #{bus.id}
+                          </span>
                         </div>
                       </div>
-
-                      <button
-                        onClick={() => handleDeleteBus(bus.id, bus.bus_number)}
-                        className="pill-btn w-full mt-1 py-1.5 rounded-full bg-canvas-soft hover:bg-red-50 text-body hover:text-red-600 text-xs font-semibold flex items-center justify-center gap-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Decommission Unit</span>
-                      </button>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        bus.status === 'active' ? 'bg-black text-white' : 'bg-canvas-soft text-body'
+                      }`}>
+                        {bus.status ? bus.status.toUpperCase() : 'REGISTERED'}
+                      </span>
                     </div>
-                  ))
-                )
+
+                    <div className="space-y-1 text-xs text-body pt-2 border-t border-black/5">
+                      <div className="flex justify-between">
+                        <span>Assigned Route:</span>
+                        <span className="font-bold text-ink">{bus.route_name || 'Unassigned'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Driver Phone:</span>
+                        <span className="font-mono text-ink">{bus.driver_phone || 'Unassigned'}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleDeleteBus(bus.id, bus.bus_number)}
+                      className="pill-btn w-full mt-1 py-1.5 rounded-full bg-canvas-soft hover:bg-red-50 text-body hover:text-red-600 text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Decommission Unit</span>
+                    </button>
+                  </div>
+                ))
               ) : (
                 <div className="col-span-3 p-8 bg-canvas rounded-2xl text-center text-xs text-body-muted border border-black/10">
-                  Loading registered fleet units...
+                  {loading ? 'Loading registered fleet units...' : 'No fleet buses registered yet. Click "Register Bus Unit" to add one.'}
                 </div>
               )}
             </div>
@@ -905,19 +912,6 @@ export default function AdminPage() {
                         </div>
 
                         <div className="flex items-center gap-2 self-end md:self-auto flex-shrink-0">
-                          <button
-                            onClick={() =>
-                              setInspectModalData({
-                                bus: issue.bus_number,
-                                category: issue.category,
-                                flags: issue.report_count || 1,
-                                desc: issue.latest_description,
-                              })
-                            }
-                            className="pill-btn px-3.5 py-1.5 rounded-full bg-canvas border border-black/10 hover:bg-surface-pressed text-ink text-xs font-semibold"
-                          >
-                            Telemetry
-                          </button>
                           <button
                             onClick={() => handleResolveIssue(issue.bus_id, issue.category)}
                             className="pill-btn px-4 py-1.5 rounded-full bg-black text-white hover:bg-black-elevated text-xs font-semibold flex items-center gap-1.5 shadow-xs"
@@ -1335,39 +1329,6 @@ export default function AdminPage() {
         </Modal>
       )}
 
-      {/* Telemetry Inspection Modal */}
-      {inspectModalData && (
-        <Modal
-          isOpen={true}
-          onClose={() => setInspectModalData(null)}
-          title={`Telemetry Log: ${inspectModalData.bus}`}
-        >
-          <div className="space-y-4">
-            <div className="p-4 bg-canvas-soft rounded-2xl space-y-2">
-              <div className="flex justify-between text-xs">
-                <span className="text-body-muted">Category:</span>
-                <span className="font-bold text-ink">{inspectModalData.category}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-body-muted">Complaint Flags:</span>
-                <span className="font-bold text-red-600">{inspectModalData.flags} commuter reports</span>
-              </div>
-              <div className="pt-2 border-t border-black/5 text-xs text-body leading-relaxed">
-                <strong>Report Note:</strong> {inspectModalData.desc || 'No further notes.'}
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={() => setInspectModalData(null)}
-                className="pill-btn px-5 py-2 rounded-full bg-black text-white text-xs font-bold"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

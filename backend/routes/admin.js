@@ -1,4 +1,4 @@
-﻿// routes/admin.js
+// routes/admin.js
 // Admin-only CRUD endpoints for managing routes, stops, and buses.
 // Every endpoint requires a valid JWT with role="admin".
 
@@ -206,6 +206,27 @@ router.delete("/stops/:id", async (req, res) => {
 // =============================================================================
 // BUSES CRUD  – /api/admin/buses
 // =============================================================================
+
+/**
+ * GET /api/admin/buses
+ * List all buses in the fleet with assigned route and driver information.
+ */
+router.get("/buses", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT b.id, b.bus_number, b.status, b.route_id, r.name AS route_name,
+              u.phone AS driver_phone, u.name AS driver_name
+       FROM buses b
+       LEFT JOIN routes r ON b.route_id = r.id
+       LEFT JOIN users u ON b.driver_id = u.id
+       ORDER BY b.id ASC`
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /admin/buses error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 /**
  * POST /api/admin/buses

@@ -4,7 +4,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-const rawSocketUrl = import.meta.env.VITE_SOCKET_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+const rawSocketUrl =
+  import.meta.env.VITE_SOCKET_URL ||
+  (typeof window !== 'undefined' &&
+   window.location.hostname !== 'localhost' &&
+   window.location.hostname !== '127.0.0.1'
+    ? 'https://trackmybus-1e7e.onrender.com'
+    : typeof window !== 'undefined'
+    ? window.location.origin
+    : '');
 const SOCKET_URL = rawSocketUrl.replace(/\/+$/, '');
 
 export function useSocket(routeId) {
