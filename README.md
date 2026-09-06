@@ -14,7 +14,7 @@ Commuters open a browser link, pick a route, and see the bus moving with ETAs to
 | Backend | Node.js, Express, Socket.io, pg, jsonwebtoken, bcrypt, @google/generative-ai |
 | Database | PostgreSQL |
 | Assistant | Gemini Flash (free tier) with function calling |
-| Hosting | Replit free tier |
+| Hosting | Render(Front-End), Vercel(Back-end)  |
 
 ## Folder layout
 
