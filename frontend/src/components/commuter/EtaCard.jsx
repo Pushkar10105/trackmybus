@@ -144,7 +144,7 @@ export default function EtaCard({
             </div>
             <div className="flex items-center gap-1 text-body font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              <span>Hyderabad RTC Live</span>
+              <span>Transit Network Live</span>
             </div>
           </div>
         </>

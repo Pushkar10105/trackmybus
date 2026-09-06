@@ -11,7 +11,7 @@ import { api } from './api/client';
 export default function App() {
   useEffect(() => {
     api.get('/api/health')
-      .then(res => console.log('✅ Connected to Hyderabad RTC Fleet Service:', res))
+      .then(res => console.log('✅ Connected to Fleet Service:', res))
       .catch(err => console.warn('Transit API Health Check:', err?.message || err));
   }, []);
 

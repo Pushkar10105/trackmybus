@@ -33,7 +33,7 @@ export default function Navbar() {
                   LIVE
                 </span>
               </div>
-              <p className="text-[11px] text-body-muted hidden sm:block">Hyderabad RTC Telemetry</p>
+              <p className="text-[11px] text-body-muted hidden sm:block">Live Transit Telemetry</p>
             </div>
           </Link>
 

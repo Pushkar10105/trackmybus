@@ -23,7 +23,7 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState([
     {
       sender: 'bot',
-      text: "Hello! I'm your Hyderabad Transit AI assistant. I can help with live bus timings, connecting routes, stops, and service alerts.",
+      text: "Hello! I'm your Transit AI assistant. I can help with live bus timings, connecting routes, stops, and service alerts.",
     },
   ]);
 
@@ -144,7 +144,7 @@ export default function ChatWidget() {
                     Live
                   </span>
                 </div>
-                <p className="text-[10px] text-body-muted">Hyderabad Transit AI • Real-time</p>
+                <p className="text-[10px] text-body-muted">Transit AI • Real-time</p>
               </div>
             </div>
 
@@ -251,7 +251,7 @@ export default function ChatWidget() {
                 <button
                   type="button"
                   onClick={toggleVoiceMic}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full flex items-center justify-center text-body hover:text-ink transition-all relative"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full flex items-center justify-center text-body hover:text-ink transition-all"
                   title={isListening ? 'Stop listening' : 'Speak your query'}
                 >
                   {isListening ? (

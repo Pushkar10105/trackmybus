@@ -140,7 +140,7 @@ export default function LostFoundModal({ isOpen, onClose, routes = [] }) {
                   Lost &amp; Found Registry
                 </h3>
                 <p className="text-[11px] text-body-muted mt-1">
-                  Hyderabad RTC Central Lost Property Depot
+                  Central Transit Lost Property Depot
                 </p>
               </div>
             </div>
