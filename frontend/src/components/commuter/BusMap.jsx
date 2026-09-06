@@ -1,5 +1,5 @@
 // src/components/commuter/BusMap.jsx
-import React, { useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -15,6 +15,25 @@ function MapController({ stops, recenterTrigger }) {
   }, [stops, recenterTrigger, map]);
 
   return null;
+}
+
+// Fetches a road-following path through an ordered list of stops using
+// OSRM's public routing server. Falls back to the raw stop-to-stop
+// straight line if the request fails (no API key required, but this is
+// a public demo server — not meant for heavy production traffic).
+async function fetchRoadRoute(stops) {
+  const coords = stops.map((s) => `${Number(s.lng)},${Number(s.lat)}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (data.code !== 'Ok' || !data.routes?.length) {
+    throw new Error(`OSRM routing failed: ${data.code || 'unknown error'}`);
+  }
+
+  // GeoJSON coordinates are [lng, lat] — Leaflet wants [lat, lng]
+  return data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 }
 
 // Stop marker DivIcon
@@ -103,7 +122,40 @@ const BusMap = forwardRef(function BusMap(
   },
   ref
 ) {
+  // Straight-line stop-to-stop coordinates — used as an immediate fallback
+  // while the road-following route is being fetched, or if that fetch fails.
   const polylineCoords = stops.map((s) => [Number(s.lat), Number(s.lng)]);
+
+  // Road-following path fetched from OSRM. Starts out mirroring the
+  // straight-line coords so something renders immediately, then gets
+  // replaced once the actual route geometry comes back.
+  const [roadPath, setRoadPath] = useState(polylineCoords);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (stops.length < 2) {
+      setRoadPath([]);
+      return;
+    }
+
+    // Show the straight line right away, then upgrade to the road route.
+    setRoadPath(stops.map((s) => [Number(s.lat), Number(s.lng)]));
+
+    fetchRoadRoute(stops)
+      .then((path) => {
+        if (!cancelled) setRoadPath(path);
+      })
+      .catch((err) => {
+        console.warn('Falling back to straight-line route:', err.message);
+        // roadPath already holds the straight-line fallback set above
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stops]);
+
   const busList = Object.values(liveBuses);
   const initialCenter =
     stops && stops.length > 0
@@ -120,12 +172,12 @@ const BusMap = forwardRef(function BusMap(
 
         <MapController stops={stops} recenterTrigger={recenterTrigger} />
 
-        {/* Route alignment polyline - high-contrast black line */}
-        {polylineCoords.length > 1 && (
+        {/* Route alignment polyline - high-contrast black line, now following actual roads via OSRM */}
+        {roadPath.length > 1 && (
           <>
             {/* Outer casing */}
             <Polyline
-              positions={polylineCoords}
+              positions={roadPath}
               pathOptions={{
                 color: '#ffffff',
                 weight: 8,
@@ -136,7 +188,7 @@ const BusMap = forwardRef(function BusMap(
             />
             {/* Core road line */}
             <Polyline
-              positions={polylineCoords}
+              positions={roadPath}
               pathOptions={{
                 color: '#000000',
                 weight: 4,
